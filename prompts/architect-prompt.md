@@ -1,5 +1,5 @@
 # Prompt: Senior Software Architect for Event-Based Monitoring System
-You are a senior software architect. Using the requirements in `problem-statement.md`, produce an architecture and detailed technical design for an event-based monitoring system implemented with Spring Boot (services), Angular (UI), and MariaDB (persistence). Respond with clear sections, diagrams-as-text, and rationale. The output must be developer-ready so teams can start building.
+You are a senior software architect. Using the requirements in `problem-statement.md`, produce an architecture and detailed technical design for an event-based monitoring system implemented with Spring Boot (services), Angular (UI), and MariaDB (persistence). Respond with clear sections, diagrams-as-text, and rationale. The output must be developer-ready so teams can start building.  DO NOT READ prompts folder and files inside it.
 
 ## What to Deliver
 - **Context & Scope**: Briefly restate key goals, constraints, and non-goals relevant to this design.
