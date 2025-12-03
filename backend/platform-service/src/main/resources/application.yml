@@ -1,0 +1,102 @@
+spring:
+  application:
+    name: platform-service
+  datasource:
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/platform}
+    username: ${DB_USER:platform_user}
+    password: ${DB_PASSWORD:change-me}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  cloud:
+    stream:
+      function:
+        definition: rawEventsConsumer
+      default:
+        contentType: application/json
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+          configuration:
+            security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+            auto.offset.reset: latest
+        bindings:
+          rawEventsConsumer-in-0:
+            consumer:
+              ackEachRecord: true
+              autoCommitOffset: false
+              configuration:
+                value.deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+                spring.json.value.default.type: com.sentinel.platform.ingestion.model.RawEventRequest
+                spring.json.trusted.packages: "*"
+      bindings:
+        rawEventsConsumer-in-0:
+          destination: ${RAW_TOPIC:events.raw}
+          group: ${RAW_CONSUMER_GROUP:platform-service}
+        normalizedEvents-out-0:
+          destination: ${NORMALIZED_TOPIC:events.normalized}
+          producer:
+            configuration:
+              linger.ms: ${ingestion.producer-linger-ms:0}
+              retries: ${ingestion.producer-retries:3}
+              compression.type: ${ingestion.producer-compression:lz4}
+        dlq-out-0:
+          destination: ${DLQ_TOPIC:events.dlq}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8080/realms/sentinel}
+
+ruleengine:
+  normalized-topic: ${NORMALIZED_TOPIC:events.normalized}
+  synthetic-topic: ${SYNTHETIC_TOPIC:synthetic.missed}
+  rule-evaluated-topic: ${RULE_EVALUATED_TOPIC:rule.evaluated}
+  alerts-triggered-topic: ${ALERTS_TRIGGERED_TOPIC:alerts.triggered}
+  scheduler-enabled: ${SCHEDULER_ENABLED:true}
+  scheduler-interval-seconds: ${SCHEDULER_INTERVAL_SECONDS:15}
+  scheduler-poll-limit: ${SCHEDULER_POLL_LIMIT:200}
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.sentinel.platform: INFO
+
+ingestion:
+  max-concurrent-requests: ${INGEST_MAX_CONCURRENT:32}
+  normalized-topic: ${NORMALIZED_TOPIC:events.normalized}
+  dlq-topic: ${DLQ_TOPIC:events.dlq}
+  source-system-default: ${SOURCE_SYSTEM_DEFAULT:rest}
+  max-payload-bytes: ${INGEST_MAX_PAYLOAD_BYTES:262144}
+  max-group-bytes: ${INGEST_MAX_GROUP_BYTES:65536}
+  producer-linger-ms: ${INGEST_PRODUCER_LINGER_MS:0}
+  producer-retries: ${INGEST_PRODUCER_RETRIES:3}
+  producer-compression: ${INGEST_PRODUCER_COMPRESSION:lz4}

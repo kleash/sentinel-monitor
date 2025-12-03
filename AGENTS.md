@@ -1,6 +1,7 @@
 # Automation Agent Ground Rules
 
 Use these guardrails when contributing changes as an automated assistant. Stay aligned with the existing documents in `docs/` (problem statement, architecture, delivery plan) and the notes below.
+
 ## Repository Orientation
 - Backend: `backend/` holds the Spring Boot services.
 - Frontend: `frontend/` contains the Angular 20 application.
@@ -14,6 +15,7 @@ Use these guardrails when contributing changes as an automated assistant. Stay a
 - Keep documentation in sync: update `docs/` when features, workflows, or onboarding change.
 - Prefer incremental commits with descriptive messages grouped by logical change.
 - Keep test cases up to date across backend, frontend, automation smoke, example integration harness, and bootstrap scripts.
+- Make sure to add intensive code comments and logging for easier understanding and maintainability.
 
 ## Quality Gates
 - Backend: `cd backend && ./mvnw test`.
@@ -21,6 +23,7 @@ Use these guardrails when contributing changes as an automated assistant. Stay a
 - Automation Regression (Playwright): `cd tests/regression`.
 
 ## Documentation Standards
+- You must update documentation to keep track of what is implemented.
 - Write Markdown with clear headings; use Mermaid diagrams for complex flows when possible.
 - Link to related wiki sections using relative paths.
 - Keep `README` concise; move deep dives to `docs/`.

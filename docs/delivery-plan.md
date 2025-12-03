@@ -8,14 +8,14 @@
 - Single-tenant deployment; storage in UTC; UI displays local time with UTC toggle; WebSocket push supported by infra.
 
 ## Milestones & Phases (entry/exit, parallelization)
-1) **Foundation & Environments** — Entry: core infra (Kafka, MariaDB, Keycloak, SMTP, CI/CD) reachable. Exit: Spring Boot/Angular skeletons with shared logging/auth libs, Flyway baseline, schema registry subjects, health/metrics wired.
-2) **Ingestion Path** — Entry: foundation done. Exit: Kafka + REST ingest writing `event_raw`, emitting `events.normalized`, DLQ path, idempotency guard, throughput/error metrics.
-3) **Rule Config & Workflow Management** — Entry: normalized events available. Exit: workflow CRUD/version/publish with validation + dry-run, config events emitted, secured APIs/UI forms.
-4) **Rule Engine Core** — Entry: published workflows in store. Exit: event consumption + workflow resolution/fan-out, state persisted (`workflow_run`, `event_occurrence`, `expectation`), `rule.evaluated` emitted, replay endpoint bounded.
-5) **Expectation Scheduler (Timers)** — Entry: expectations written. Exit: locked polling with ShedLock, `synthetic.missed` emitted within ≤1 minute target, lag metrics/alerts.
-6) **Aggregation & Read Models** — Entry: rule evaluations flowing. Exit: `stage_aggregate` maintained, wallboard/aggregate APIs live, cached in UI Gateway.
-7) **Alerting & Notifications** — Entry: evaluation outcomes available. Exit: alert lifecycle persisted/deduped, email adapter live, suppression/maintenance windows, DLQ + metrics.
-8) **UI Gateway & Angular UI** — Entry: read/query endpoints stable. Exit: wallboard/workflow/item/alerts/rules pages with WebSocket push + polling fallback, auth flows, accessibility/responsiveness.
+1) **Foundation & Environments** — Unified platform service baseline (Spring Boot), logging/auth libs, Flyway migrations (`event_raw`, workflow/rule/alert tables), schema registry subjects, health/metrics wired.
+2) **Ingestion Path** — Kafka + REST ingest writing `event_raw`, emitting `events.normalized`, DLQ path, idempotency guard, throughput/error metrics.
+3) **Rule Config & Workflow Management** — Workflow CRUD/version/publish with validation + dry-run, config events emitted, secured APIs/UI forms.
+4) **Rule Engine Core** — Event consumption + workflow resolution/fan-out, state persisted (`workflow_run`, `event_occurrence`, `expectation`), `rule.evaluated` emitted, replay endpoint bounded.
+5) **Expectation Scheduler (Timers)** — Locked polling with ShedLock, `synthetic.missed` emitted within ≤1 minute target, lag metrics/alerts.
+6) **Aggregation & Read Models** — `stage_aggregate` maintained, wallboard/aggregate APIs live, cached in UI Gateway.
+7) **Alerting & Notifications** — Alert lifecycle persisted/deduped, email adapter live, suppression/maintenance windows, DLQ + metrics.
+8) **UI Gateway & Angular UI** — Read/query endpoints stable. Wallboard/workflow/item/alerts/rules pages with WebSocket push + polling fallback, auth flows, accessibility/responsiveness.
 9) **Hardening & Ops Readiness** — Entry: end-to-end happy path proven. Exit: perf/scale/chaos/replay drills, runbooks, retention/archival jobs scheduled, go-live checklist.
 
 Parallelization: after phase 1, phases 2 and 3 can proceed in parallel; phase 6 can start once `rule.evaluated` schema is stable; UI (phase 8) can start with mocks alongside phases 4–7; alerting email adapter can be stubbed while SMTP access completes.
