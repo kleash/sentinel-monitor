@@ -32,12 +32,15 @@ start_backend() {
     return
   fi
   log "Starting backend platform-service on port ${BACKEND_PORT}..."
-  nohup DB_URL="${DB_URL}" DB_USER="${DB_USER}" DB_PASSWORD="${DB_PASSWORD}" \
+  nohup env \
+    DB_URL="${DB_URL}" \
+    DB_USER="${DB_USER}" \
+    DB_PASSWORD="${DB_PASSWORD}" \
     KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS}" \
     java -jar "${ROOT_DIR}/backend/platform-service/target/platform-service-0.0.1-SNAPSHOT.jar" \
-      --server.port="${BACKEND_PORT}" \
-      --spring.profiles.active=local \
-      > "${LOG_DIR}/backend.log" 2>&1 &
+    --server.port="${BACKEND_PORT}" \
+    --spring.profiles.active=local \
+    > "${LOG_DIR}/backend.log" 2>&1 &
   echo $! > "${PID_DIR}/backend.pid"
 }
 

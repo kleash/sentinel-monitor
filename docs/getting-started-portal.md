@@ -1,6 +1,6 @@
 # Sentinel Command Center — Quickstart
 
-This guide onboards a new operator or developer to start, stop, seed, and explore the portal without prior context. It aligns with the architecture and delivery plan: Kafka + MariaDB + Spring backend + Angular frontend with PLC-style wallboard views.
+This guide onboards production support and configuration teams to start, seed, configure, and operate the portal. It aligns with the architecture/delivery plan: Kafka + MariaDB + Spring backend + Angular frontend with PLC-style wallboard views.
 
 ## Prerequisites
 - Docker + Docker Compose (for Kafka/MariaDB bootstrap).
@@ -20,6 +20,7 @@ This guide onboards a new operator or developer to start, stop, seed, and explor
 ./scripts/start.sh
 # wait for health: backend http://localhost:8080/actuator/health, frontend http://localhost:4300
 ```
+_Tested_: start/stop/seed executed locally with confluent Kafka + MariaDB; backend/health OK; seed completed without errors.
 
 ### Stop or teardown
 ```bash
@@ -43,6 +44,33 @@ Seed contents:
 - **Alerts console (`/alerts`)**: list, filter by state (mock backend returns all), lifecycle actions.
 - **Rules (`/rules`)**: workflow catalog list and creation form (nodes/edges, group dimensions, runbook URL) with live graph preview.
 - **Ingest simulator (`/ingest`)**: send sample events to `/ingest` endpoint; useful for ops smoke tests and demos.
+
+## Configuration team guide
+1) **Create/modify workflows**  
+   - UI: `/rules` page supports nodes/edges, group dimensions, and runbook URL previewed on the graph canvas.  
+   - API: `POST /workflows` (see `docs/frontend-api.md`) with nodes/edges; published immediately as active version.
+2) **Ingest real events**  
+   - Kafka-first: produce to `events.raw` with `correlationKey`, `eventType`, `eventTime`, `workflowKey` (hint).  
+   - REST fallback: `POST /ingest` with same fields; include `Idempotency-Key` header.  
+   - For demos, use `/ingest` UI form or `scripts/seed.sh`.
+3) **Group dimensions & SLAs**  
+   - Edges accept `maxLatencySec` or `absoluteDeadline`; nodes carry `eventType`.  
+   - Group dimensions inform wallboard grouping (e.g., `book`, `region`, `feed`).  
+4) **Runbooks**  
+   - Set `runbookUrl` per workflow to surface links on alerts and detail pages.
+
+## Production support guide
+- **Monitor**: default landing `/wallboard`; drill into `/workflow/:key` and `/item/:correlationKey` from tiles/alerts.  
+- **Act**: `/alerts` for ack/suppress/resolve; alert strip also exposes actions inline on workflow pages.  
+- **Validate ingest**: `/ingest` for manual checks; `/rules` to verify active graph; `/items/{key}` API for raw timeline.  
+- **Health**: backend `/actuator/health`, Prom metrics `/actuator/prometheus`; frontend availability at `/:port`.
+
+## Debugging workflows & issues
+- **Logs**: `logs/backend.log` (Spring/ingest/eval), `logs/frontend.log` (Angular dev server).  
+- **Kafka**: ensure broker reachable at `KAFKA_BOOTSTRAP_SERVERS` (`localhost:29092` from host).  
+- **Database**: MariaDB at `localhost:3306`, DB `sentinel` (root/sentinel defaults). Check tables `workflow_*`, `event_raw`, `alert`.  
+- **UI**: inspect browser console for 401/5xx; Angular mock mode can be disabled via `frontend/src/environments/environment.ts` (`mockApi:false`).  
+- **Seed validation**: after `seed.sh`, `/workflow/trade-lifecycle` should show `TR123` timeline and open alert (if SLA breached).
 
 ## Configuration knobs
 - Frontend mock mode defaults to **on** for offline demos (`frontend/src/environments/environment.ts`). Set `mockApi:false` and `apiBaseUrl/wsBaseUrl` when pointing at a real gateway.
