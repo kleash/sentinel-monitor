@@ -1,0 +1,26 @@
+:host {
+  display: block;
+}
+
+.app-shell {
+  position: relative;
+  padding: 1rem 1.5rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  z-index: 1;
+}
+
+.background {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 10% 10%, rgba(0, 180, 255, 0.12), transparent 25%),
+    radial-gradient(circle at 80% 0%, rgba(255, 0, 90, 0.16), transparent 30%),
+    linear-gradient(135deg, #030712 0%, #0f172a 50%, #090b1a 100%);
+  z-index: 0;
+}
+
+.content {
+  margin-top: 1rem;
+  display: block;
+  color: var(--text-strong);
+}

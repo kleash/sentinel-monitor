@@ -1,0 +1,418 @@
+import { Injectable } from '@angular/core';
+import {
+  AckRequest,
+  Alert,
+  AlertSummary,
+  CreateWorkflowRequest,
+  IngestRequest,
+  ItemTimeline,
+  StageAggregate,
+  WallboardGroupTile,
+  WallboardView,
+  WallboardWorkflowTile,
+  WorkflowGraph,
+  WorkflowSummary
+} from '../models';
+
+@Injectable({ providedIn: 'root' })
+export class MockBackendService {
+  private readonly workflows: WorkflowSummary[] = [];
+  private readonly wallboard: WallboardWorkflowTile[] = [];
+  private readonly aggregates: Record<string, StageAggregate[]> = {};
+  private readonly itemTimelines: Map<string, ItemTimeline> = new Map();
+  private readonly alerts: Map<string, Alert> = new Map();
+
+  constructor() {
+    this.seed();
+  }
+
+  getWallboard(): WallboardView {
+    return {
+      workflows: this.wallboard,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  getWorkflows(): WorkflowSummary[] {
+    return this.workflows;
+  }
+
+  getWorkflow(key: string): WorkflowSummary | undefined {
+    return this.workflows.find((wf) => wf.key === key);
+  }
+
+  getAggregates(workflowId: string, groupHash?: string): StageAggregate[] {
+    const agg = this.aggregates[workflowId] ?? [];
+    if (!groupHash) {
+      return agg;
+    }
+    return agg.filter((row) => row.groupHash === groupHash);
+  }
+
+  getItem(correlationKey: string): ItemTimeline | undefined {
+    return this.itemTimelines.get(correlationKey);
+  }
+
+  getAlerts(state?: string): Alert[] {
+    const allAlerts = Array.from(this.alerts.values());
+    if (!state) {
+      return allAlerts;
+    }
+    return allAlerts.filter((alert) => alert.state === state);
+  }
+
+  ackAlert(id: string, payload?: AckRequest): Alert | undefined {
+    const alert = this.alerts.get(id);
+    if (!alert) {
+      return undefined;
+    }
+    alert.state = 'ack';
+    alert.ackedAt = new Date().toISOString();
+    alert.ackedBy = 'playwright';
+    alert.reason = payload?.reason ?? alert.reason;
+    this.alerts.set(id, alert);
+    return alert;
+  }
+
+  suppressAlert(id: string, payload?: AckRequest): Alert | undefined {
+    const alert = this.alerts.get(id);
+    if (!alert) {
+      return undefined;
+    }
+    alert.state = 'suppressed';
+    alert.suppressedUntil = payload?.until ?? new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    alert.reason = payload?.reason ?? alert.reason;
+    this.alerts.set(id, alert);
+    return alert;
+  }
+
+  resolveAlert(id: string, payload?: AckRequest): Alert | undefined {
+    const alert = this.alerts.get(id);
+    if (!alert) {
+      return undefined;
+    }
+    alert.state = 'resolved';
+    alert.reason = payload?.reason ?? alert.reason;
+    alert.lastTriggeredAt = new Date().toISOString();
+    this.alerts.set(id, alert);
+    return alert;
+  }
+
+  createWorkflow(payload: CreateWorkflowRequest): WorkflowSummary {
+    const existing = this.workflows.find((wf) => wf.key === payload.key);
+    if (existing) {
+      return existing;
+    }
+    const workflow: WorkflowSummary = {
+      id: (this.workflows.length + 1).toString(),
+      key: payload.key,
+      name: payload.name,
+      status: 'green',
+      activeVersion: 'v1',
+      graph: payload.graph,
+      groupDimensions: payload.graph.groupDimensions,
+      runbookUrl: payload.runbookUrl
+    };
+    this.workflows.push(workflow);
+    this.wallboard.push({
+      workflowId: workflow.id,
+      workflowKey: workflow.key,
+      name: workflow.name,
+      status: 'green',
+      alerts: [],
+      groups: [
+        this.buildGroup('default', 'default', 'green', 3, 0, 0, payload.graph)
+      ]
+    });
+    this.aggregates[workflow.id] = payload.graph.nodes.map((node) => ({
+      workflowVersionId: `${workflow.id}-v1`,
+      nodeKey: node.key,
+      groupHash: 'default',
+      inFlight: 2,
+      completed: 5,
+      late: 0,
+      failed: 0
+    }));
+    return workflow;
+  }
+
+  ingest(payload: IngestRequest) {
+    const now = new Date();
+    const receivedAt = now.toISOString();
+    const eventTime = payload.eventTime || receivedAt;
+    const itemKey = payload.correlationKey;
+    const workflow = this.workflows.find((wf) => wf.key === payload.workflowKey) ?? this.workflows[0];
+    const timeline = this.itemTimelines.get(itemKey) ?? {
+      workflowId: workflow.key,
+      workflowVersionId: `${workflow.id}-v1`,
+      correlationKey: itemKey,
+      status: 'green',
+      events: [],
+      pendingExpectations: [],
+      group: payload.group ?? { book: 'EQD', region: 'NY' }
+    };
+    timeline.events = [
+      ...timeline.events,
+      {
+        node: payload.eventType,
+        eventTime,
+        receivedAt,
+        late: false,
+        orderViolation: false
+      }
+    ];
+    this.itemTimelines.set(itemKey, timeline);
+    return {
+      ...payload,
+      eventTime,
+      receivedAt,
+      normalized: true
+    };
+  }
+
+  private seed() {
+    const tradeGraph: WorkflowGraph = {
+      nodes: [
+        { key: 'ingest', eventType: 'TRADE_INGEST', start: true },
+        { key: 'sys2-verify', eventType: 'SYS2_VERIFIED' },
+        { key: 'sys3-ack', eventType: 'SYS3_ACK' },
+        { key: 'sys4-settle', eventType: 'SYS4_SETTLED', terminal: true }
+      ],
+      edges: [
+        { from: 'ingest', to: 'sys2-verify', maxLatencySec: 300, severity: 'amber' },
+        { from: 'sys2-verify', to: 'sys3-ack', maxLatencySec: 300, severity: 'red' },
+        { from: 'sys3-ack', to: 'sys4-settle', maxLatencySec: 600, severity: 'amber' }
+      ],
+      groupDimensions: ['book', 'region'],
+      runbookUrl: 'https://runbooks/trade'
+    };
+    const fileGraph: WorkflowGraph = {
+      nodes: [
+        { key: 'file-received', eventType: 'FILE_RECEIVED', start: true },
+        { key: 'validated', eventType: 'FILE_VALIDATED' },
+        { key: 'loaded', eventType: 'FILE_LOADED', terminal: true }
+      ],
+      edges: [
+        { from: 'file-received', to: 'validated', absoluteDeadline: '08:00Z', severity: 'red' },
+        { from: 'validated', to: 'loaded', maxLatencySec: 900, severity: 'amber' }
+      ],
+      groupDimensions: ['feed', 'region'],
+      runbookUrl: 'https://runbooks/file'
+    };
+
+    this.workflows.push(
+      {
+        id: 'wf-trade',
+        key: 'trade-lifecycle',
+        name: 'Trade Lifecycle',
+        status: 'amber',
+        activeVersion: 'v2',
+        graph: tradeGraph,
+        groupDimensions: tradeGraph.groupDimensions,
+        runbookUrl: tradeGraph.runbookUrl
+      },
+      {
+        id: 'wf-file',
+        key: 'file-receipt',
+        name: 'File Receipt',
+        status: 'green',
+        activeVersion: 'v1',
+        graph: fileGraph,
+        groupDimensions: fileGraph.groupDimensions,
+        runbookUrl: fileGraph.runbookUrl
+      }
+    );
+
+    this.wallboard.push(
+      {
+        workflowId: 'wf-trade',
+        workflowKey: 'trade-lifecycle',
+        name: 'Trade Lifecycle',
+        status: 'amber',
+        alerts: [],
+        groups: [
+          this.buildGroup('EQD / NY', 'eqd-ny', 'amber', 9, 2, 1, tradeGraph),
+          this.buildGroup('FI / LN', 'fi-ln', 'green', 7, 0, 0, tradeGraph)
+        ]
+      },
+      {
+        workflowId: 'wf-file',
+        workflowKey: 'file-receipt',
+        name: 'File Receipt',
+        status: 'green',
+        alerts: [],
+        groups: [this.buildGroup('DAILY_FEED', 'daily-feed', 'green', 3, 0, 0, fileGraph)]
+      }
+    );
+
+    this.aggregates['wf-trade'] = [
+      {
+        workflowVersionId: 'wf-trade-v2',
+        workflowId: 'wf-trade',
+        groupHash: 'eqd-ny',
+        nodeKey: 'ingest',
+        inFlight: 2,
+        completed: 18,
+        late: 0,
+        failed: 0,
+        avgLatencyMs: 1200,
+        p95LatencyMs: 1800
+      },
+      {
+        workflowVersionId: 'wf-trade-v2',
+        workflowId: 'wf-trade',
+        groupHash: 'eqd-ny',
+        nodeKey: 'sys2-verify',
+        inFlight: 3,
+        completed: 15,
+        late: 1,
+        failed: 0,
+        avgLatencyMs: 2400,
+        p95LatencyMs: 3200
+      },
+      {
+        workflowVersionId: 'wf-trade-v2',
+        workflowId: 'wf-trade',
+        groupHash: 'eqd-ny',
+        nodeKey: 'sys3-ack',
+        inFlight: 4,
+        completed: 14,
+        late: 1,
+        failed: 1,
+        avgLatencyMs: 5000,
+        p95LatencyMs: 7000
+      },
+      {
+        workflowVersionId: 'wf-trade-v2',
+        workflowId: 'wf-trade',
+        groupHash: 'eqd-ny',
+        nodeKey: 'sys4-settle',
+        inFlight: 1,
+        completed: 12,
+        late: 2,
+        failed: 0,
+        avgLatencyMs: 4200,
+        p95LatencyMs: 6500
+      }
+    ];
+    this.aggregates['wf-file'] = [
+      {
+        workflowVersionId: 'wf-file-v1',
+        workflowId: 'wf-file',
+        groupHash: 'daily-feed',
+        nodeKey: 'file-received',
+        inFlight: 1,
+        completed: 5,
+        late: 0,
+        failed: 0
+      },
+      {
+        workflowVersionId: 'wf-file-v1',
+        workflowId: 'wf-file',
+        groupHash: 'daily-feed',
+        nodeKey: 'validated',
+        inFlight: 0,
+        completed: 5,
+        late: 0,
+        failed: 0
+      },
+      {
+        workflowVersionId: 'wf-file-v1',
+        workflowId: 'wf-file',
+        groupHash: 'daily-feed',
+        nodeKey: 'loaded',
+        inFlight: 0,
+        completed: 5,
+        late: 0,
+        failed: 0
+      }
+    ];
+
+    const correlationKey = 'TR123';
+    this.itemTimelines.set(correlationKey, {
+      workflowId: 'trade-lifecycle',
+      workflowVersionId: 'wf-trade-v2',
+      correlationKey,
+      status: 'amber',
+      group: { book: 'EQD', region: 'NY' },
+      events: [
+        {
+          node: 'ingest',
+          eventTime: this.offset(-12),
+          receivedAt: this.offset(-12),
+          late: false,
+          orderViolation: false
+        },
+        {
+          node: 'sys2-verify',
+          eventTime: this.offset(-10),
+          receivedAt: this.offset(-10),
+          late: false,
+          orderViolation: false
+        }
+      ],
+      pendingExpectations: [
+        { from: 'sys2-verify', to: 'sys3-ack', dueAt: this.offset(2), severity: 'red', remainingSec: 120 }
+      ],
+      alerts: [
+        {
+          id: 'alrt-1',
+          nodeKey: 'sys3-ack',
+          severity: 'red',
+          state: 'open',
+          title: 'SYS3 ACK pending',
+          correlationKey,
+          triggeredAt: this.offset(-2),
+          lastTriggeredAt: this.offset(-1),
+          reason: 'SLA_MISSED',
+          runbookUrl: 'https://runbooks/trade#sys3'
+        }
+      ]
+    });
+
+    const alert: Alert = {
+      id: 'alrt-1',
+      nodeKey: 'sys3-ack',
+      severity: 'red',
+      state: 'open',
+      title: 'SYS3 ACK pending',
+      correlationKey,
+      triggeredAt: this.offset(-2),
+      lastTriggeredAt: this.offset(-1),
+      reason: 'SLA_MISSED',
+      runbookUrl: 'https://runbooks/trade#sys3'
+    };
+    this.alerts.set(alert.id, alert);
+  }
+
+  private buildGroup(
+    label: string,
+    groupHash: string,
+    status: 'green' | 'amber' | 'red',
+    inFlight: number,
+    late: number,
+    failed: number,
+    graph: WorkflowGraph
+  ): WallboardGroupTile {
+    return {
+      label,
+      groupHash,
+      status,
+      inFlight,
+      late,
+      failed,
+      countdowns: graph.edges.map((edge) => ({
+        label: `${edge.from} → ${edge.to}`,
+        dueAt: this.offset((edge.maxLatencySec ?? 300) / 60),
+        remainingSec: edge.maxLatencySec ?? 300,
+        severity: edge.severity ?? 'amber'
+      }))
+    };
+  }
+
+  private offset(minutesFromNow: number): string {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + minutesFromNow);
+    return now.toISOString();
+  }
+}

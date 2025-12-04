@@ -1,0 +1,14 @@
+{
+  "name": "sentinel-regression",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:coverage": "nyc --reporter=text-summary --reporter=lcov playwright test --reporter=list",
+    "install:browsers": "playwright install chromium --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "nyc": "^15.1.0"
+  }
+}

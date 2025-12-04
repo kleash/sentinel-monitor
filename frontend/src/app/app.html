@@ -1,0 +1,14 @@
+<div class="background"></div>
+<div class="app-shell">
+  <app-toolbar [updatedAtLabel]="updatedAt()"></app-toolbar>
+  <app-alert-strip
+    *ngIf="alerts()?.length"
+    [alerts]="alerts()"
+    (ack)="ack($event)"
+    (suppress)="suppress($event)"
+    (resolve)="resolve($event)"
+  ></app-alert-strip>
+  <main class="content">
+    <router-outlet></router-outlet>
+  </main>
+</div>
