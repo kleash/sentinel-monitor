@@ -10,7 +10,7 @@ This guide onboards a new operator or developer to start, stop, seed, and explor
 ## Scripts (root `scripts/`)
 | Script | Purpose | Notes |
 | --- | --- | --- |
-| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`). Logs under `logs/`; PIDs under `scripts/.pids/`. |
+| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Logs under `logs/`; PIDs under `scripts/.pids/`. |
 | `./scripts/stop.sh` | Stops backend/frontend and pauses Docker containers. | Keeps volumes. |
 | `./scripts/teardown.sh` | Full stop + `docker compose down -v` for infra. | Deletes infra volumes. |
 | `./scripts/seed.sh` | Seeds demo workflows + events to showcase the UI. | Env: `API_URL` (default `http://localhost:8080`). Idempotent. |
