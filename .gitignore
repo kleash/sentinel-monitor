@@ -4,8 +4,11 @@
 /frontend/.angular/
 /frontend/coverage/
 /frontend/.stryker-tmp/
+/frontend/logs/
 /tests/regression/node_modules/
 /tests/regression/.nyc_output/
 /tests/regression/coverage/
 /tests/regression/playwright-report/
 /tests/regression/test-results/
+/logs/
+/scripts/.pids/
