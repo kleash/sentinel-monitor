@@ -141,7 +141,10 @@ export class MockBackendService {
     const receivedAt = now.toISOString();
     const eventTime = payload.eventTime || receivedAt;
     const itemKey = payload.correlationKey;
-    const workflow = this.workflows.find((wf) => wf.key === payload.workflowKey) ?? this.workflows[0];
+    const workflow =
+      this.workflows.find((wf) => wf.key === payload.workflowKey) ?? this.workflows[0];
+    const groupHash = this.buildGroupHash(payload.group);
+    const groupLabel = this.buildGroupLabel(payload.group);
     const timeline = this.itemTimelines.get(itemKey) ?? {
       workflowId: workflow.key,
       workflowVersionId: `${workflow.id}-v1`,
@@ -162,12 +165,92 @@ export class MockBackendService {
       }
     ];
     this.itemTimelines.set(itemKey, timeline);
+    this.bumpWallboard(workflow, groupHash, groupLabel, payload.eventType);
+    this.bumpAggregates(workflow, groupHash, payload.eventType);
     return {
       ...payload,
       eventTime,
       receivedAt,
       normalized: true
     };
+  }
+
+  private bumpWallboard(
+    workflow: WorkflowSummary,
+    groupHash: string,
+    groupLabel: string,
+    eventType: string
+  ) {
+    const card = this.wallboard.find((wf) => wf.workflowKey === workflow.key);
+    if (!card) {
+      return;
+    }
+    let group = card.groups.find((g) => g.groupHash === groupHash);
+    if (!group) {
+      group = this.buildGroup(groupLabel, groupHash, 'green', 0, 0, 0, workflow.graph!);
+      card.groups.push(group);
+    }
+    group.inFlight += 1;
+    group.status = group.inFlight > 10 ? 'red' : 'amber';
+    card.status = group.status;
+    const countdown = group.countdowns?.[0];
+    if (countdown) {
+      countdown.remainingSec = Math.max(0, (countdown.remainingSec ?? 0) - 30);
+    }
+    const wallboardAlert: AlertSummary = {
+      id: `alrt-${Date.now()}`,
+      nodeKey: eventType.toLowerCase(),
+      severity: group.status,
+      state: 'open',
+      title: `${eventType} accepted`,
+      correlationKey: groupHash,
+      triggeredAt: new Date().toISOString()
+    };
+    card.alerts = [...card.alerts, wallboardAlert].slice(-5);
+  }
+
+  private bumpAggregates(workflow: WorkflowSummary, groupHash: string, eventType: string) {
+    const aggregates = (this.aggregates[workflow.id] = this.aggregates[workflow.id] ?? []);
+    const nodeKey =
+      workflow.graph?.nodes.find((n) => n.eventType === eventType)?.key ??
+      workflow.graph?.nodes.find((n) => n.key === eventType)?.key ??
+      eventType.toLowerCase();
+    let aggregate = aggregates.find((agg) => agg.nodeKey === nodeKey && agg.groupHash === groupHash);
+    if (!aggregate) {
+      aggregate = {
+        workflowVersionId: `${workflow.id}-v1`,
+        workflowId: workflow.id,
+        groupHash,
+        nodeKey,
+        inFlight: 0,
+        completed: 0,
+        late: 0,
+        failed: 0
+      };
+      aggregates.push(aggregate);
+    }
+    aggregate.inFlight += 1;
+    aggregate.avgLatencyMs = (aggregate.avgLatencyMs ?? 0) + 100;
+    aggregate.p95LatencyMs = (aggregate.p95LatencyMs ?? 0) + 200;
+  }
+
+  private buildGroupHash(group?: Record<string, string>) {
+    if (!group || Object.keys(group).length === 0) {
+      return 'default';
+    }
+    return Object.values(group)
+      .join('-')
+      .toLowerCase()
+      .replace(/\s+/g, '-');
+  }
+
+  private buildGroupLabel(group?: Record<string, string>) {
+    if (!group || Object.keys(group).length === 0) {
+      return 'default';
+    }
+    return Object.values(group)
+      .map((v) => v.toString().toUpperCase())
+      .join(' / ');
   }
 
   private seed() {

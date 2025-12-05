@@ -38,7 +38,7 @@ flowchart LR
 
 ## Testing & Coverage
 - Unit tests: `cd frontend && npm test` (ChromeHeadless) with mocks + interceptors wired.
-- Playwright regression (mock API): `cd tests/regression && npm run test:coverage` (starts Angular dev server on 4300). nyc-wrapped Playwright run reports coverage (100% for exercised test code; UI exercised across all feature routes).
+- Playwright regression (stack bootstrap + artifacts): `cd tests/regression && npm test` (global setup installs deps, starts backend/infra via `scripts/start.sh` with `SKIP_FRONTEND=true`, seeds data, and serves the mock-enabled UI on `localhost:4300`). Captures screenshots, videos, and GIFs under `tests/regression/test-results/`; coverage variant remains available via `npm run test:coverage`.
 - Notes: Angular compiler emits optional chaining warnings only; no test failures. Mock data covers trade lifecycle and file receipt workflows plus sample alerts/expectations.
 
 ## Assumptions & Next Steps

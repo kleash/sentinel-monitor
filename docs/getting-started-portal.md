@@ -10,7 +10,7 @@ This guide onboards production support and configuration teams to start, seed, c
 ## Scripts (root `scripts/`)
 | Script | Purpose | Notes |
 | --- | --- | --- |
-| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Logs under `logs/`; PIDs under `scripts/.pids/`. |
+| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Automation flags: `SKIP_FRONTEND=true` or `SKIP_BACKEND=true`; override frontend command via `FRONTEND_START_CMD` (used by the regression suite to run the Angular server separately). Logs under `logs/`; PIDs under `scripts/.pids/`. |
 | `./scripts/stop.sh` | Stops backend/frontend and pauses Docker containers. | Keeps volumes. |
 | `./scripts/teardown.sh` | Full stop + `docker compose down -v` for infra. | Deletes infra volumes. |
 | `./scripts/seed.sh` | Seeds demo workflows + events to showcase the UI. | Env: `API_URL` (default `http://localhost:8080`). Idempotent. |
@@ -81,9 +81,14 @@ Seed contents:
 - Logs live in `logs/` (`backend.log`, `frontend.log`).
 - PID files in `scripts/.pids/` allow safe restarts; delete stale PIDs if you force-kill processes.
 - Health: backend `http://localhost:8080/actuator/health`; frontend base `http://localhost:4300`.
-- Tests (already run): `cd frontend && npm test`; `cd tests/regression && npm run test:coverage` (nyc-wrapped Playwright).
 
 ## Troubleshooting
 - **Ports in use**: set `FRONTEND_PORT`/`BACKEND_PORT` then restart.
 - **Docker not available**: start external MariaDB/Kafka, update backend config accordingly, or run frontend in mock mode only.
 - **Seed failures**: ensure backend reachable at `API_URL` and DB migrations applied; rerun `seed.sh` (idempotent). 
+
+## Tests (developer + regression)
+- Frontend unit tests: `cd frontend && npm test`.
+- Regression/e2e: `cd tests/regression && npm test` (global setup starts infra/backend via `scripts/start.sh` with `SKIP_FRONTEND=true`, seeds demo data, launches the Angular mock server for Playwright). Outputs screenshots, videos, and GIFs under `tests/regression/test-results/`.
+- Regression guide: [docs/regression-playwright.md](./regression-playwright.md).
+- Coverage mode remains available: `cd tests/regression && npm run test:coverage` (nyc-wrapped Playwright run).

@@ -6,10 +6,13 @@ LOG_DIR="${ROOT_DIR}/logs"
 PID_DIR="${ROOT_DIR}/scripts/.pids"
 FRONTEND_PORT="${FRONTEND_PORT:-4300}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"
+SKIP_FRONTEND="${SKIP_FRONTEND:-false}"
+SKIP_BACKEND="${SKIP_BACKEND:-false}"
 DB_URL="${DB_URL:-jdbc:mariadb://localhost:3306/sentinel}"
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-sentinel}"
 KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:29092}"
+FRONTEND_START_CMD="${FRONTEND_START_CMD:-npm run start:mock -- --port ${FRONTEND_PORT}}"
 
 mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
@@ -27,6 +30,10 @@ start_infra() {
 }
 
 start_backend() {
+  if [ "${SKIP_BACKEND}" = "true" ]; then
+    log "Skipping backend start (SKIP_BACKEND=true)."
+    return
+  fi
   if [ -f "${PID_DIR}/backend.pid" ] && kill -0 "$(cat "${PID_DIR}/backend.pid")" 2>/dev/null; then
     log "Backend already running (PID $(cat "${PID_DIR}/backend.pid"))."
     return
@@ -45,34 +52,42 @@ start_backend() {
 }
 
 start_frontend() {
+  if [ "${SKIP_FRONTEND}" = "true" ]; then
+    log "Skipping frontend start (SKIP_FRONTEND=true)."
+    return
+  fi
   if [ -f "${PID_DIR}/frontend.pid" ] && kill -0 "$(cat "${PID_DIR}/frontend.pid")" 2>/dev/null; then
     log "Frontend already running (PID $(cat "${PID_DIR}/frontend.pid"))."
     return
   fi
   log "Installing frontend deps (if needed) and starting Angular dev server on port ${FRONTEND_PORT}..."
   (cd "${ROOT_DIR}/frontend" && npm install >/dev/null)
-  nohup bash -c "cd \"${ROOT_DIR}/frontend\" && npm run start:mock -- --port ${FRONTEND_PORT}" \
+  nohup bash -c "cd \"${ROOT_DIR}/frontend\" && ${FRONTEND_START_CMD}" \
     > "${LOG_DIR}/frontend.log" 2>&1 &
   echo $! > "${PID_DIR}/frontend.pid"
 }
 
 healthcheck() {
-  log "Waiting for backend on :${BACKEND_PORT}..."
-  for _ in {1..30}; do
-    if curl -sf "http://localhost:${BACKEND_PORT}/actuator/health" >/dev/null 2>&1; then
-      log "Backend is healthy."
-      break
-    fi
-    sleep 2
-  done
-  log "Waiting for frontend on :${FRONTEND_PORT}..."
-  for _ in {1..30}; do
-    if curl -sf "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1; then
-      log "Frontend is reachable."
-      break
-    fi
-    sleep 2
-  done
+  if [ "${SKIP_BACKEND}" != "true" ]; then
+    log "Waiting for backend on :${BACKEND_PORT}..."
+    for _ in {1..30}; do
+      if curl -sf "http://localhost:${BACKEND_PORT}/actuator/health" >/dev/null 2>&1; then
+        log "Backend is healthy."
+        break
+      fi
+      sleep 2
+    done
+  fi
+  if [ "${SKIP_FRONTEND}" != "true" ]; then
+    log "Waiting for frontend on :${FRONTEND_PORT}..."
+    for _ in {1..30}; do
+      if curl -sf "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1; then
+        log "Frontend is reachable."
+        break
+      fi
+      sleep 2
+    done
+  fi
 }
 
 start_infra
