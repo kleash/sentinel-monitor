@@ -49,6 +49,7 @@
 - Flyway migrations: `V0001__create_event_raw.sql` through `V0006__rule_engine_enhancements.sql` (adds event ids, expectation fired_at, indexes).
 - Profiles configurable via env vars (`DB_URL`, `KAFKA_BOOTSTRAP_SERVERS`, `OIDC_ISSUER_URI`, scheduler knobs, etc.).
 - Tests run with MariaDB Testcontainers and mocked Kafka, coverage gate >=70% via JaCoCo.
+- Observability: ingestion/rule/aggregation paths emit info-level breadcrumbs for run creation, expectation clearing/creation, throttling, and publish outcomes to ease prod debugging (MDC `correlationKey` remains in use during ingest).
 
 ## Next Backend Work (priority)
 1) Add replay/recovery API and guardrails on workflow graph validation.

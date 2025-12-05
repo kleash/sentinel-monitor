@@ -11,6 +11,10 @@ import com.sentinel.platform.ingestion.model.RawEventRequest;
 
 @Component
 public class RawEventValidator {
+    /**
+     * Lightweight guardrail that validates minimal ingest envelope fields before
+     * normalization, catching malformed requests early.
+     */
 
     public void validate(RawEventRequest request) {
         Map<String, Object> payload = new java.util.HashMap<>();

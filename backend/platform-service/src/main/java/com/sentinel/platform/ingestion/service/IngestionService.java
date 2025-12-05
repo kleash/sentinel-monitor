@@ -24,6 +24,10 @@ import com.sentinel.platform.ingestion.repository.EventRawRepository;
 
 @Service
 public class IngestionService {
+    /**
+     * Central orchestrator for ingesting raw events (REST or Kafka), normalizing
+     * them, persisting for idempotency and fanning out to downstream topics.
+     */
     private static final Logger log = LoggerFactory.getLogger(IngestionService.class);
     private static final String INGEST_STATUS_STORED = "STORED";
 
@@ -54,13 +58,26 @@ public class IngestionService {
         this.rawEventValidator = rawEventValidator;
     }
 
+    /**
+     * REST entrypoint that validates, normalizes, and publishes a single raw event.
+     */
     public NormalizedEvent ingestFromRest(RawEventRequest request) {
+        log.info("REST ingest requested eventType={} correlationKey={} eventId={}", request != null ? request.getEventType() : null,
+                request != null ? request.getCorrelationKey() : null, request != null ? request.getEventId() : null);
         NormalizedEvent normalized = normalize(request);
         persistAndPublish(normalized);
         return normalized;
     }
 
+    /**
+     * Kafka entrypoint. Normalizes incoming events and applies DLQ routing on validation/processing failures.
+     */
     public void ingestFromKafka(RawEventRequest request, Instant receivedAtOverride, Map<String, Object> originalPayloadForDlq) {
+        log.info("Kafka ingest received eventType={} correlationKey={} eventId={} receivedAtOverride={}",
+                request != null ? request.getEventType() : null,
+                request != null ? request.getCorrelationKey() : null,
+                request != null ? request.getEventId() : null,
+                receivedAtOverride);
         if (receivedAtOverride != null) {
             request.setReceivedAt(receivedAtOverride);
         }
@@ -79,6 +96,10 @@ public class IngestionService {
         }
     }
 
+    /**
+     * Persists the normalized event for idempotency, publishes to downstream stream,
+     * and records counters/logs around dedupe and successful sends.
+     */
     private void persistAndPublish(NormalizedEvent normalized) {
         MDC.put("correlationKey", normalized.getCorrelationKey());
         try {
@@ -86,19 +107,24 @@ public class IngestionService {
             SaveResult result = repository.save(record);
             if (result == SaveResult.DUPLICATE) {
                 meterRegistry.counter("ingest.events.duplicate").increment();
-                log.info("Duplicate ingest ignored eventId={} source={}", normalized.getEventId(), normalized.getSourceSystem());
+                log.info("Duplicate ingest ignored eventId={} source={} workflowKey={}", normalized.getEventId(), normalized.getSourceSystem(), normalized.getWorkflowKey());
                 return;
             }
             meterRegistry.counter("ingest.events.stored").increment();
             normalizedEventPublisher.publish(normalized);
             meterRegistry.counter("ingest.events.normalized.sent").increment();
-            log.info("Ingest stored and published correlationKey={} eventType={}", normalized.getCorrelationKey(), normalized.getEventType());
+            log.info("Ingest stored and published correlationKey={} eventType={} eventId={} receivedAt={}",
+                    normalized.getCorrelationKey(), normalized.getEventType(), normalized.getEventId(), normalized.getReceivedAt());
         } finally {
             MDC.remove("correlationKey");
         }
     }
 
+    /**
+     * Validates required fields, applies defaults, enforces limits, and emits a normalized event envelope.
+     */
     private NormalizedEvent normalize(RawEventRequest request) {
+        // Validate the envelope before attempting to normalize individual fields.
         if (request == null) {
             throw new InvalidEventException("Payload missing");
         }
@@ -131,6 +157,9 @@ public class IngestionService {
         normalized.setCorrelationKey(correlationKey);
         normalized.setGroup(request.getGroup());
         normalized.setPayload(request.getPayload());
+        log.debug("Normalized event envelope correlationKey={} eventType={} workflowKey={} workflowKeysCount={}",
+                normalized.getCorrelationKey(), normalized.getEventType(), normalized.getWorkflowKey(),
+                normalized.getWorkflowKeys() != null ? normalized.getWorkflowKeys().size() : 0);
         enforceSizeLimits(normalized);
         return normalized;
     }

@@ -22,6 +22,10 @@ import com.sentinel.platform.ingestion.service.IngestionService;
 @RestController
 @RequestMapping("/ingest")
 public class IngestController {
+    /**
+     * REST entrypoint for ingesting raw events. Thin wrapper that applies
+     * idempotency header, rate limits, and delegates to normalization flow.
+     */
     private static final Logger log = LoggerFactory.getLogger(IngestController.class);
 
     private final IngestionService ingestionService;
@@ -40,7 +44,7 @@ public class IngestController {
             request.setEventId(idempotencyKey);
         }
         NormalizedEvent normalized = rateLimiter.execute(() -> ingestionService.ingestFromRest(request));
-        log.debug("REST ingest accepted correlationKey={} eventType={}", normalized.getCorrelationKey(), normalized.getEventType());
+        log.info("REST ingest accepted correlationKey={} eventType={} eventId={}", normalized.getCorrelationKey(), normalized.getEventType(), normalized.getEventId());
         return ResponseEntity.ok(normalized);
     }
 }

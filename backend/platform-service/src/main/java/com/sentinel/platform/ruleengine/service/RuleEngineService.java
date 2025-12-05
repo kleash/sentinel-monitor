@@ -41,6 +41,10 @@ import com.sentinel.platform.ruleengine.repository.RuleEngineStateRepository.Run
 
 @Service
 public class RuleEngineService {
+    /**
+     * Applies workflow rules to normalized events, managing runtime state and emitting
+     * both rule evaluation and alert trigger events for downstream aggregation/alerting.
+     */
     private static final Logger log = LoggerFactory.getLogger(RuleEngineService.class);
 
     private final WorkflowRepository workflowRepository;
@@ -67,6 +71,10 @@ public class RuleEngineService {
         this.clock = clock;
     }
 
+    /**
+     * Entry point for normalized ingest events. Resolves applicable workflow versions
+     * and processes the event against each version's runtime state.
+     */
     public void handleNormalizedEvent(NormalizedEvent event) {
         List<WorkflowVersion> targets = resolveTargetVersions(event);
         if (targets.isEmpty()) {
@@ -80,9 +88,13 @@ public class RuleEngineService {
         }
     }
 
+    /**
+     * Handles scheduler-produced synthetic misses to close out expectations and emit alerts.
+     */
     public void handleSyntheticMissed(String payload) {
         try {
             SyntheticMissedEvent missed = objectMapper.readValue(payload, SyntheticMissedEvent.class);
+            log.info("Handling synthetic missed workflowRunId={} toNode={} severity={}", missed.getWorkflowRunId(), missed.getToNode(), missed.getSeverity());
             RunContext runContext = stateRepository.loadRunContext(missed.getWorkflowRunId());
             Map<String, Object> group = parseGroup(runContext.groupJson());
 
@@ -119,6 +131,10 @@ public class RuleEngineService {
         }
     }
 
+    /**
+     * Applies a normalized event to a specific workflow version, managing run creation,
+     * expectation clearing/creation, and downstream emissions.
+     */
     private void processEventForVersion(NormalizedEvent event, WorkflowVersion version) {
         Optional<NodeDescriptor> nodeOpt = stateRepository.findNodeForEvent(version.getId(), event.getEventType());
         if (nodeOpt.isEmpty()) {
@@ -130,6 +146,8 @@ public class RuleEngineService {
         Long runId = stateRepository.findRunId(version.getId(), event.getCorrelationKey());
         if (runId == null) {
             runId = stateRepository.createRun(version.getId(), event.getCorrelationKey(), "green", event.getEventTime(), toJson(event.getGroup()));
+            log.info("Created new workflow run version={} runId={} correlationKey={} startNode={}",
+                    version.getId(), runId, event.getCorrelationKey(), node.nodeKey());
         }
         boolean duplicate = StringUtils.hasText(event.getEventId()) && stateRepository.hasSeenEvent(runId, event.getEventId());
         if (duplicate) {
@@ -144,12 +162,14 @@ public class RuleEngineService {
         Map<String, Integer> inFlightDeltas = new HashMap<>();
         if (!cleared.isEmpty()) {
             inFlightDeltas.merge(node.nodeKey(), -cleared.size(), Integer::sum);
+            log.info("Cleared expectations runId={} node={} clearedCount={} late={}", runId, node.nodeKey(), cleared.size(), late);
         }
 
         for (OutgoingEdge edge : stateRepository.fetchOutgoingEdges(version.getId(), node.nodeKey())) {
             Instant dueAt = computeDueAt(event.getEventTime(), edge);
             stateRepository.createExpectation(runId, node.nodeKey(), edge.toNodeKey(), dueAt, edge.severity());
             inFlightDeltas.merge(edge.toNodeKey(), 1, Integer::sum);
+            log.debug("Created expectation runId={} fromNode={} toNode={} dueAt={} severity={}", runId, node.nodeKey(), edge.toNodeKey(), dueAt, edge.severity());
         }
 
         stateRepository.saveOccurrence(runId, node.nodeKey(), event.getEventId(), event.getEventTime(), event.getReceivedAt(),
@@ -157,6 +177,8 @@ public class RuleEngineService {
 
         String status = deriveStatus(late, orderViolation, cleared);
         stateRepository.updateRun(runId, status, clock.instant(), node.nodeKey());
+        log.info("Rule evaluated runId={} version={} node={} status={} late={} orderViolation={} inFlightDeltas={}",
+                runId, version.getId(), node.nodeKey(), status, late, orderViolation, inFlightDeltas);
 
         RuleEvaluatedEvent evaluated = new RuleEvaluatedEvent();
         evaluated.setWorkflowVersionId(version.getId());

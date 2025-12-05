@@ -14,6 +14,10 @@ import com.sentinel.platform.ruleengine.model.RuleEvaluatedEvent;
 
 @Service
 public class AggregationService {
+    /**
+     * Consumes rule evaluation events and maintains stage-level aggregates for wallboards
+     * and detail views. Aggregates are keyed by workflow version, group hash, node, and minute bucket.
+     */
     private static final Logger log = LoggerFactory.getLogger(AggregationService.class);
 
     private final StageAggregateRepository repository;
@@ -35,6 +39,9 @@ public class AggregationService {
                 repository.upsert(event.getWorkflowVersionId(), event.getGroupHash(), inflight.getKey(), bucket,
                         inflight.getValue(), 0, 0, 0);
             }
+            log.info("Aggregated rule evaluation workflowVersionId={} node={} bucket={} completedDelta={} lateDelta={} failedDelta={} inflightAdjusted={}",
+                    event.getWorkflowVersionId(), event.getNode(), bucket, event.getCompletedDelta(), event.getLateDelta(),
+                    event.getFailedDelta(), inflightDeltas);
         } catch (Exception ex) {
             log.warn("Failed to aggregate rule evaluated payload", ex);
         }

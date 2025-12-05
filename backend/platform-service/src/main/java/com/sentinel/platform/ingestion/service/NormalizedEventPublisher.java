@@ -16,6 +16,10 @@ import com.sentinel.platform.ingestion.model.NormalizedEvent;
 
 @Component
 public class NormalizedEventPublisher {
+    /**
+     * Publishes normalized ingest events to the configured Spring Cloud Stream binding
+     * so downstream rule engine consumers can react in near real time.
+     */
     private static final Logger log = LoggerFactory.getLogger(NormalizedEventPublisher.class);
 
     private final StreamBridge streamBridge;
@@ -35,5 +39,7 @@ public class NormalizedEventPublisher {
             log.error("Failed to publish normalized event to stream binding normalizedEvents-out-0");
             throw new IllegalStateException("Failed to publish normalized event");
         }
+        log.info("Normalized event published topic={} correlationKey={} eventType={} eventId={}", "normalizedEvents-out-0",
+                correlationKey, event.getEventType(), event.getEventId());
     }
 }

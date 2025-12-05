@@ -9,6 +9,10 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class StageAggregateRepository {
+    /**
+     * Maintains minute-level aggregates for workflow stages. Upsert semantics
+     * are handled in SQL to keep operations idempotent under concurrent updates.
+     */
     private final JdbcTemplate jdbcTemplate;
 
     public StageAggregateRepository(JdbcTemplate jdbcTemplate) {
