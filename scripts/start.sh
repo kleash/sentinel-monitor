@@ -6,6 +6,7 @@ LOG_DIR="${ROOT_DIR}/logs"
 PID_DIR="${ROOT_DIR}/scripts/.pids"
 FRONTEND_PORT="${FRONTEND_PORT:-4300}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"
+SECURITY_DISABLE_AUTH="${SECURITY_DISABLE_AUTH:-true}"
 SKIP_FRONTEND="${SKIP_FRONTEND:-false}"
 SKIP_BACKEND="${SKIP_BACKEND:-false}"
 DB_URL="${DB_URL:-jdbc:mariadb://localhost:3306/sentinel}"
@@ -38,12 +39,24 @@ start_backend() {
     log "Backend already running (PID $(cat "${PID_DIR}/backend.pid"))."
     return
   fi
+  wait_for_port_release() {
+    local port="$1"
+    for _ in {1..60}; do
+      if ! lsof -i :"${port}" >/dev/null 2>&1; then
+        return 0;
+      fi
+      sleep 1
+    done
+    log "Port ${port} still appears busy; attempting to start backend anyway."
+  }
+  wait_for_port_release "${BACKEND_PORT}"
   log "Starting backend platform-service on port ${BACKEND_PORT}..."
   nohup env \
     DB_URL="${DB_URL}" \
     DB_USER="${DB_USER}" \
     DB_PASSWORD="${DB_PASSWORD}" \
     KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS}" \
+    SECURITY_DISABLE_AUTH="${SECURITY_DISABLE_AUTH}" \
     java -jar "${ROOT_DIR}/backend/platform-service/target/platform-service-0.0.1-SNAPSHOT.jar" \
     --server.port="${BACKEND_PORT}" \
     --spring.profiles.active=local \
@@ -70,7 +83,7 @@ start_frontend() {
 healthcheck() {
   if [ "${SKIP_BACKEND}" != "true" ]; then
     log "Waiting for backend on :${BACKEND_PORT}..."
-    for _ in {1..30}; do
+    for _ in {1..45}; do
       if curl -sf "http://localhost:${BACKEND_PORT}/actuator/health" >/dev/null 2>&1; then
         log "Backend is healthy."
         break
@@ -80,7 +93,7 @@ healthcheck() {
   fi
   if [ "${SKIP_FRONTEND}" != "true" ]; then
     log "Waiting for frontend on :${FRONTEND_PORT}..."
-    for _ in {1..30}; do
+    for _ in {1..45}; do
       if curl -sf "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1; then
         log "Frontend is reachable."
         break

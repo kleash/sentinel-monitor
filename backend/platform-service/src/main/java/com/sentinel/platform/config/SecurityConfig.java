@@ -1,5 +1,6 @@
 package com.sentinel.platform.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -9,6 +10,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableMethodSecurity
+@ConditionalOnProperty(name = "security.disable-auth", havingValue = "false", matchIfMissing = true)
 public class SecurityConfig {
 
     @Bean

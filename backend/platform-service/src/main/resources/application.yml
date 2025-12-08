@@ -19,7 +19,11 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
   cloud:
     stream:
       function:
@@ -49,6 +53,8 @@ spring:
           destination: ${NORMALIZED_TOPIC:events.normalized}
           producer:
             configuration:
+              key.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+              value.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
               linger.ms: ${ingestion.producer-linger-ms:0}
               retries: ${ingestion.producer-retries:3}
               compression.type: ${ingestion.producer-compression:lz4}

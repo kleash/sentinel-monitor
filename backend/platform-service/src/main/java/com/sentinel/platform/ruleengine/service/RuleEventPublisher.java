@@ -47,16 +47,16 @@ public class RuleEventPublisher {
                 properties.getAlertsTriggeredTopic(), alert.getCorrelationKey(), alert.getDedupeKey(), alert.getWorkflowRunId());
     }
 
-    private String serialize(Object payload) {
+    private byte[] serialize(Object payload) {
         try {
-            return objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsBytes(payload);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to serialize event payload", ex);
         }
     }
 
-    private void send(String topic, String key, String payload) {
-        Message<String> message = MessageBuilder.withPayload(payload)
+    private void send(String topic, String key, byte[] payload) {
+        Message<byte[]> message = MessageBuilder.withPayload(payload)
                 .setHeader(KafkaHeaders.TOPIC, topic)
                 .setHeader(KafkaHeaders.KEY, key != null ? key.getBytes(java.nio.charset.StandardCharsets.UTF_8) : null)
                 .build();

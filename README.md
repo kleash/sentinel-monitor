@@ -19,6 +19,9 @@ Production-strength, Kafka-first event observability: model workflows as graphs,
 ## Quickstart (Local)
 Prereqs: Docker + Compose, Java 17+, Node 18+, ports `3306/29092/9092/8080/4300` free.
 
+**Fast path:** `./scripts/demo.sh` (reset infra, build backend, start stack with live backend UI, seed trade/equity data).  
+
+Manual steps:
 1) Start infra + backend + UI (mock-friendly):  
    `./scripts/start.sh`  
    Env knobs: `BACKEND_PORT`, `FRONTEND_PORT`, `DB_URL/DB_USER/DB_PASSWORD`, `KAFKA_BOOTSTRAP_SERVERS`, `SKIP_FRONTEND=true`, `SKIP_BACKEND=true`, `FRONTEND_START_CMD` (override UI command).
@@ -38,6 +41,7 @@ Prereqs: Docker + Compose, Java 17+, Node 18+, ports `3306/29092/9092/8080/4300`
 - [docs/backend-platform.md](docs/backend-platform.md) - Backend implementation status
 - [docs/frontend-implementation.md](docs/frontend-implementation.md) - Frontend implementation and data flow
 - [docs/frontend-api.md](docs/frontend-api.md) - API guide for the UI gateway
+- [docs/demo-guide.md](docs/demo-guide.md) - One-command demo, seeded data, and live ingest examples
 - [docs/getting-started-portal.md](docs/getting-started-portal.md) - Portal onboarding, scripts, and feature tour
 - [docs/regression-playwright.md](docs/regression-playwright.md) - Playwright regression details
 - [docs/problem-statement.md](docs/problem-statement.md) - Problem statement and context

@@ -11,13 +11,16 @@ This guide onboards production support and configuration teams to start, seed, c
 | Script | Purpose | Notes |
 | --- | --- | --- |
 | `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Automation flags: `SKIP_FRONTEND=true` or `SKIP_BACKEND=true`; override frontend command via `FRONTEND_START_CMD` (used by the regression suite to run the Angular server separately). Logs under `logs/`; PIDs under `scripts/.pids/`. |
+| `./scripts/demo.sh` | One-command demo: (optional) reset infra, build backend, start stack with live backend UI, seed trade/equity data. | Env: `RESET_STATE` (default `true`, runs `docker compose down -v`), `BACKEND_PORT`, `FRONTEND_PORT`, `SECURITY_DISABLE_AUTH` (default `true` for local demos), `SKIP_BUILD`, `API_URL`, `FRONTEND_START_CMD`. Proxies UI via `frontend/proxy.conf.js`. |
 | `./scripts/stop.sh` | Stops backend/frontend and pauses Docker containers. | Keeps volumes. |
 | `./scripts/teardown.sh` | Full stop + `docker compose down -v` for infra. | Deletes infra volumes. |
-| `./scripts/seed.sh` | Seeds demo workflows + events to showcase the UI. | Env: `API_URL` (default `http://localhost:8080`). Idempotent. |
+| `./scripts/seed.sh` | Seeds demo workflows + events to showcase the UI. | Env: `API_URL` (default `http://localhost:8080`), `AUTH_TOKEN` (optional bearer when auth is enabled). Idempotent. |
 
 ### Start the stack
 ```bash
-./scripts/start.sh
+./scripts/demo.sh   # recommended for a clean demo with live backend data
+# or
+./scripts/start.sh  # starts services; use FRONTEND_START_CMD="npm run start:demo -- --port 4300" for live API
 # wait for health: backend http://localhost:8080/actuator/health, frontend http://localhost:4300
 ```
 _Tested_: start/stop/seed executed locally with confluent Kafka + MariaDB; backend/health OK; seed completed without errors.
@@ -34,8 +37,14 @@ Run after the backend is up:
 ./scripts/seed.sh
 ```
 Seed contents:
-- **Trade Lifecycle** workflow (ingest → sys2 verify → sys3 ack → settle) with sample trade `TR123` (EQD/NY) events.
-- **Daily File Receipt** workflow (file received → validated → loaded) with `DAILY_FEED` sample.
+- **Trade Lifecycle** workflow (ingest → sys2 verify → sys3 ack → settle) with trades:
+  - `TR123` (EQD/NY) full path through settle.
+  - `TR456` (EQD/LN) partially progressed (one SYS2 verification).
+  - `TR789` (EQD/NY) ingested only to showcase overdue expectations via the scheduler.
+- **Equity Allocation** workflow (alloc → validated → booked):
+  - `EQ-555` (EQD/NY) completed run.
+  - `EQ-556` (EQD/LN) awaiting validation.
+  - `EQ-557` (ETF/NY) late validation with pending/overdue booking expectation.
 
 ## Feature tour (frontend)
 - **Wallboard (`/wallboard`)**: workflow tiles with status pills, group metrics (in-flight/late/failed), countdown badges, wallboard/UTC toggles.
@@ -72,6 +81,7 @@ Seed contents:
 ## Configuration knobs
 - Frontend mock mode defaults to **on** for offline demos (`frontend/src/environments/environment.ts`). Set `mockApi:false` and `apiBaseUrl/wsBaseUrl` when pointing at a real gateway.
 - Ports: set `FRONTEND_PORT` / `BACKEND_PORT` before `start.sh`.
+- Local demos default to `SECURITY_DISABLE_AUTH=true`; set to `false` to enforce JWTs and pass `AUTH_TOKEN` into `seed.sh`/manual curls.
 - Docker-less mode: if Docker isn’t installed, `start.sh` skips infra; ensure MariaDB/Kafka exist externally or disable backend start.
 
 ## Operational notes

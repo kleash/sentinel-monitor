@@ -70,9 +70,9 @@ public class ExpectationSchedulerService {
         }
     }
 
-    private String serialize(Object payload) {
+    private byte[] serialize(Object payload) {
         try {
-            return objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsBytes(payload);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize synthetic event", e);
         }
