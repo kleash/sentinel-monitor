@@ -259,3 +259,320 @@
 ## 7. Known Gaps / TODOs
 
 - TODO: Planned future work – Replay/recovery and additional workflow graph validation endpoints are deferred to later phases.
+
+## 8. Rule Engine Deep Dive
+
+### 8.1 Entry Points
+- Kafka normalized events: `RuleEngineListeners.onNormalized` listens on `${ruleengine.normalized-topic}` (default `events.normalized`) and deserializes `NormalizedEvent`.
+- Synthetic misses: `RuleEngineListeners.onSyntheticMissed` listens on `${ruleengine.synthetic-topic}` (default `synthetic.missed`) carrying `SyntheticMissedEvent`.
+- Scheduler: `ExpectationSchedulerService` polls the `expectation` table and sends `SyntheticMissedEvent` to Kafka.
+- Timeline API: `/items/{correlationKey}` in `ItemController` reads `workflow_run`, `event_occurrence`, `expectation`, `alert`.
+
+### 8.2 Workflow Resolution and State
+- Workflow versions resolved by:
+  - Explicit `workflowKeys` list in the event (fan-out).
+  - Single `workflowKey` hint.
+  - Otherwise, active workflows whose nodes match `eventType` (`WorkflowNodeRepository.findActiveByEventType`).
+- Runtime state tables:
+  - `workflow_run`: one row per `(workflow_version_id, correlation_key)`, tracks status and last node.
+  - `event_occurrence`: each applied event with late/duplicate/order flags and payload excerpt.
+  - `expectation`: pending/fired/cleared expectations per edge (`from_node_key`,`to_node_key`), due time, severity, lock owner, fired_at.
+
+### 8.3 Evaluation Flow (per normalized event)
+1) Find node for `eventType` in the target workflow version (`RuleEngineStateRepository.findNodeForEvent`).
+2) Load or create `workflow_run` for `(workflowVersionId, correlationKey)` with status `green`.
+3) Duplicate guard: if `eventId` seen for the run, event is ignored.
+4) Clear expectations for the target node (one row at a time). A late flag is set if `receivedAt` > `due_at`. Order violation is suppressed when only optional inbound edges exist; otherwise flagged when no expectation cleared and node is not start.
+5) Create new expectations for each outgoing edge unless `optional=true`. For `expectedCount`, multiple rows are created with the same due time. `absoluteDeadline` is parsed (HH:mm or offset) or `maxLatencySec` is added to `eventTime`.
+6) Persist occurrence with flags; update run status (red on order violation, amber/red on late severity, green otherwise).
+7) Emit `RuleEvaluatedEvent` to `${ruleengine.rule-evaluated-topic}` with deltas for completed/late/failed and in-flight adjustments.
+8) If late or order violation, emit `AlertTriggerEvent` to `${ruleengine.alerts-triggered-topic}` with dedupe key `<workflowVersionId>:<node>:<correlationKey>`.
+
+### 8.4 Synthetic Miss Handling
+- Scheduler claims due `expectation` rows (`pending`) and marks them `fired` with lock owner.
+- Each claimed row is serialized as `SyntheticMissedEvent` (includes `dueAt`, `severity`, `dedupeKey`) to `${ruleengine.synthetic-topic}`.
+- `RuleEngineService.handleSyntheticMissed` loads run context, emits `RuleEvaluatedEvent` marked `late=true`, updates run status, and emits `AlertTriggerEvent` with reason `EXPECTED_MISSED`.
+
+### 8.5 Kafka Message Schemas (Rule Engine)
+- `events.normalized` (payload: `NormalizedEvent`)
+  - `eventId` (string, optional; UUID if absent)
+  - `sourceSystem` (string, required)
+  - `eventType` (string, required)
+  - `eventTime` (ISO-8601, required)
+  - `receivedAt` (ISO-8601, optional; defaults to now)
+  - `workflowKey` (string, optional)
+  - `workflowKeys` (array<string>, optional)
+  - `correlationKey` (string, required; Kafka key)
+  - `group` (object, optional)
+  - `payload` (object, optional)
+- `synthetic.missed` (payload: `SyntheticMissedEvent`)
+  - `expectationId` (long, required)
+  - `workflowRunId` (long, required)
+  - `fromNode` (string, required)
+  - `toNode` (string, required)
+  - `dueAt` (ISO-8601, required)
+  - `severity` (string, required)
+  - `dedupeKey` (string, required; Kafka key uses `toNode`)
+- `rule.evaluated` (payload: `RuleEvaluatedEvent`)
+  - `workflowVersionId` (long, required)
+  - `workflowRunId` (long, required)
+  - `node` (string, required)
+  - `correlationKey` (string, required; Kafka key)
+  - `status` (string `green|amber|red`, required)
+  - `late` (bool), `orderViolation` (bool)
+  - `completedDelta` (int), `lateDelta` (int), `failedDelta` (int)
+  - `inFlightDeltas` (map<string,int>, optional)
+  - `groupHash` (string, optional), `group` (object, optional)
+  - `eventTime` (ISO-8601), `receivedAt` (ISO-8601)
+- `alerts.triggered` (payload: `AlertTriggerEvent`)
+  - `dedupeKey` (string, required; Kafka key)
+  - `workflowVersionId` (long, required)
+  - `workflowRunId` (long, optional)
+  - `node` (string, required)
+  - `correlationKey` (string, required)
+  - `severity` (string, required)
+  - `reason` (string, required; e.g., `SLA_MISSED`, `ORDER_VIOLATION`, `EXPECTED_MISSED`)
+  - `triggeredAt` (ISO-8601, optional; defaults to now)
+
+### 8.6 Wallboard/Timeline APIs
+- `/workflows/{id}/aggregates`: returns rows from `stage_aggregate` filtered by workflow version and optional `groupHash`.
+- `/wallboard`: returns recent `stage_aggregate` rows across workflows.
+- `/items/{correlationKey}`: returns latest run for the key (or specific `workflowVersionId`), including events, remaining expectations, and alerts.
+
+## 9. Aggregation Deep Dive
+
+### 9.1 Entry Points and Flow
+- Kafka listener `AggregationListeners.onRuleEvaluated` consumes `${ruleengine.rule-evaluated-topic}`.
+- `AggregationService.handleRuleEvaluated` deserializes `RuleEvaluatedEvent`, computes minute bucket (based on `receivedAt` or now), and calls `StageAggregateRepository.upsert`.
+- Upsert adjusts:
+  - `in_flight` by `inFlightDeltas` per nodeKey.
+  - `completed`, `late`, `failed` by the corresponding deltas on the event node.
+- No latency metrics are computed (columns removed).
+
+### 9.2 Persistence
+- Table `stage_aggregate` columns: `workflow_version_id`, `group_dim_hash`, `node_key`, `bucket_start`, `in_flight`, `completed`, `late`, `failed`.
+- Upsert key: `(workflow_version_id, group_dim_hash, node_key, bucket_start)`.
+- `group_dim_hash` corresponds to `RuleEvaluatedEvent.groupHash` (SHA-256 first bytes of sorted group dims).
+
+### 9.3 Exposure to Frontend
+- `/workflows/{id}/aggregates`: direct select on `stage_aggregate` with optional `groupHash` filter and `limit`.
+- `/wallboard`: latest rows ordered by `bucket_start desc limit ?`.
+- Frontend wallboard tiles map `in_flight`, `completed`, `late`, `failed` per node; countdowns in UI derive from expectations (not provided by this API).
+
+### 9.4 Kafka Message Schema (Aggregation)
+- Consumed: `rule.evaluated` (see 8.5).
+- Produced: none (aggregation writes DB only).
+
+## 10. End-to-End Examples
+
+### 10.1 Example 1: Trade Lifecycle
+- Workflow config (POST `/workflows`):
+  ```json
+  {
+    "name": "Trade Lifecycle",
+    "key": "trade-lifecycle",
+    "createdBy": "ops",
+    "graph": {
+      "nodes": [
+        {"key":"ingest","eventType":"TRADE_INGEST","start":true},
+        {"key":"sys2-verify","eventType":"SYS2_VERIFIED"},
+        {"key":"sys3-ack","eventType":"SYS3_ACK"},
+        {"key":"sys4-settle","eventType":"SYS4_SETTLED","terminal":true}
+      ],
+      "edges": [
+        {"from":"ingest","to":"sys2-verify","maxLatencySec":300,"severity":"amber","expectedCount":2},
+        {"from":"sys2-verify","to":"sys3-ack","maxLatencySec":300,"severity":"red"},
+        {"from":"sys3-ack","to":"sys4-settle","absoluteDeadline":"08:00Z","severity":"amber","optional":true}
+      ]
+    },
+    "groupDimensions":["book","region"]
+  }
+  ```
+- Event stream (Kafka `events.raw` → ingestion → `events.normalized`):
+  1) `TRADE_INGEST` (correlationKey `TR123`, group `{book:"EQD",region:"NY"}`) → Rule engine creates run, clears none, creates 2 expectations for `sys2-verify`.
+  2) `SYS2_VERIFIED` → clears one expectation (late? based on due), creates expectation to `sys3-ack`.
+  3) Second `SYS2_VERIFIED` (expectedCount=2) → clears the second expectation; no order violation.
+  4) `SYS3_ACK` → clears expectation, creates optional expectation to `sys4-settle` (optional edge skipped for new expectations); no order violation.
+  5) Missing `SYS4_SETTLED` before deadline → scheduler emits `synthetic.missed` → rule engine marks late, emits alert `EXPECTED_MISSED`.
+- Sample normalized Kafka payloads (values abbreviated, topic `events.normalized`):
+  1) `TRADE_INGEST`
+     ```json
+     {
+       "eventId": "e1",
+       "sourceSystem": "sys1",
+       "eventType": "TRADE_INGEST",
+       "eventTime": "2024-06-10T12:00:00Z",
+       "receivedAt": "2024-06-10T12:00:02Z",
+       "workflowKey": "trade-lifecycle",
+       "correlationKey": "TR123",
+       "group": {"book": "EQD", "region": "NY"},
+       "payload": {"notional": 1000000}
+     }
+     ```
+  2) `SYS2_VERIFIED` (first)
+     ```json
+     {
+       "eventId": "e2",
+       "sourceSystem": "sys2",
+       "eventType": "SYS2_VERIFIED",
+       "eventTime": "2024-06-10T12:02:00Z",
+       "receivedAt": "2024-06-10T12:02:01Z",
+       "workflowKey": "trade-lifecycle",
+       "correlationKey": "TR123",
+       "group": {"book": "EQD", "region": "NY"}
+     }
+     ```
+  3) `SYS2_VERIFIED` (second)
+     ```json
+     {
+       "eventId": "e3",
+       "sourceSystem": "sys2",
+       "eventType": "SYS2_VERIFIED",
+       "eventTime": "2024-06-10T12:02:05Z",
+       "receivedAt": "2024-06-10T12:02:06Z",
+       "workflowKey": "trade-lifecycle",
+       "correlationKey": "TR123",
+       "group": {"book": "EQD", "region": "NY"}
+     }
+     ```
+  4) `SYS3_ACK`
+     ```json
+     {
+       "eventId": "e4",
+       "sourceSystem": "sys3",
+       "eventType": "SYS3_ACK",
+       "eventTime": "2024-06-10T12:04:00Z",
+       "receivedAt": "2024-06-10T12:04:01Z",
+       "workflowKey": "trade-lifecycle",
+       "correlationKey": "TR123",
+       "group": {"book": "EQD", "region": "NY"}
+     }
+     ```
+  5) Synthetic miss emitted by scheduler (topic `synthetic.missed`)
+     ```json
+     {
+       "expectationId": 42,
+       "workflowRunId": 1,
+       "fromNode": "sys3-ack",
+       "toNode": "sys4-settle",
+       "dueAt": "2024-06-10T08:00:00Z",
+       "severity": "amber",
+       "dedupeKey": "exp-42-1718006400000"
+     }
+     ```
+- Event-by-event system effects (wallboard and DB):
+  1) After `TRADE_INGEST`:
+     - DB: `workflow_run` created (status `green`); two `expectation` rows for `sys2-verify`.
+     - Aggregation: `rule.evaluated` for node `ingest` increments `completed=1`, `in_flight` +2 for `sys2-verify` bucket.
+     - Wallboard (`/workflows/{id}/aggregates?groupHash=<EQD/NY hash>`): shows `ingest.completed=1`, `sys2-verify.in_flight=2`.
+  2) First `SYS2_VERIFIED`:
+     - DB: one expectation cleared; run stays `green`; new expectation to `sys3-ack`.
+     - Aggregation: node `sys2-verify` `completed=1`, `in_flight` adjustments (-1 for `sys2-verify`, +1 for `sys3-ack`).
+     - Wallboard: `sys2-verify.completed=1`, `sys2-verify.in_flight=1`, `sys3-ack.in_flight=1`.
+  3) Second `SYS2_VERIFIED`:
+     - DB: second expectation cleared; no order violation; run `green`.
+     - Aggregation: another `completed=1` on `sys2-verify`, `in_flight` -1 on `sys2-verify`.
+     - Wallboard: `sys2-verify.completed=2`, `sys2-verify.in_flight=0`.
+  4) `SYS3_ACK`:
+     - DB: expectation to `sys3-ack` cleared; optional edge means no new expectations; run `green`.
+     - Aggregation: `sys3-ack.completed=1`, `sys3-ack.in_flight` -1; no late/failed.
+     - Wallboard: `sys3-ack.completed=1`, `sys3-ack.in_flight=0`.
+  5) Synthetic miss for `SYS4_SETTLED`:
+     - Scheduler claims pending expectation, marks `fired`, emits `synthetic.missed`.
+     - Rule engine marks late for node `sys4-settle`, updates run status `amber/red`, emits `rule.evaluated` (lateDelta=1, failedDelta=0) and `alerts.triggered` (`EXPECTED_MISSED`).
+     - Aggregation: `sys4-settle.late=1`, `in_flight` unchanged (optional edge skipped at creation).
+     - Wallboard: `sys4-settle.late=1`, alert appears in `/items/TR123` alerts list; overall workflow tile may show degraded status depending on frontend logic.
+- State and DB touchpoints:
+  - `event_raw`: one row per ingest (idempotent on `source_system`,`eventId`).
+  - `workflow_run`: one row for `trade-lifecycle` + `TR123`, status transitions green → green → green → green → amber/red on miss.
+  - `event_occurrence`: one per received event with late/order flags.
+  - `expectation`: rows created/cleared/fired per edge; two rows for first edge due to `expectedCount=2`.
+- Kafka emissions:
+  - After each applied event: `rule.evaluated` with `completedDelta=1`, in-flight deltas reflecting expectation changes, keyed by `correlationKey`.
+  - On late/order: `alerts.triggered` with `reason` (`SLA_MISSED` or `EXPECTED_MISSED`), dedupe key `<versionId>:<node>:<correlationKey>`.
+- Aggregation:
+  - Consumes each `rule.evaluated`, upserts `stage_aggregate` minute bucket per `workflowVersionId`, `groupHash` (hash of `{book,region}`), `node`.
+  - `in_flight` increments by expected counts; decrements when expectations clear.
+- Wallboard:
+  - Frontend calls `/workflows/{id}/aggregates?groupHash=<hash>`; sees per-node counts for latest buckets (in-flight decreases as expectations clear; late increments on synthetic miss).
+  - Timeline `/items/TR123` shows events, remaining expectations (if any), and alerts list from `alert` table.
+- Example alert payload (Kafka `alerts.triggered`):
+  ```json
+  {
+    "dedupeKey":"<wfVersionId>:sys4-settle:TR123",
+    "workflowVersionId":1,
+    "workflowRunId":1,
+    "node":"sys4-settle",
+    "correlationKey":"TR123",
+    "severity":"amber",
+    "reason":"EXPECTED_MISSED",
+    "triggeredAt":"2024-06-10T12:05:00Z"
+  }
+  ```
+
+### 10.2 Example 2: Parallel Trade + Equity Workflows
+- Config snippets:
+  - Trade workflow as above.
+  - Equity workflow (POST `/workflows`):
+    ```json
+    {
+      "name":"Equity Allocation",
+      "key":"equity-flow",
+      "createdBy":"ops",
+      "graph":{
+        "nodes":[
+          {"key":"alloc-received","eventType":"EQUITY_ALLOC","start":true},
+          {"key":"alloc-validated","eventType":"EQUITY_VALIDATED"},
+          {"key":"alloc-booked","eventType":"EQUITY_BOOKED","terminal":true}
+        ],
+        "edges":[
+          {"from":"alloc-received","to":"alloc-validated","maxLatencySec":120,"severity":"amber"},
+          {"from":"alloc-validated","to":"alloc-booked","maxLatencySec":300,"severity":"red"}
+        ]
+      },
+      "groupDimensions":["desk","region"]
+    }
+    ```
+- Ingestion at volume:
+  - Trades and equities both publish to `events.raw` with distinct `eventType`s and `workflowKey` hints (`trade-lifecycle` vs `equity-flow`).
+  - Ingestion normalizes and keys by `correlationKey` (e.g., tradeId, allocId). Kafka partitions keep per-key ordering.
+- Routing:
+  - `RuleEngineService.handleNormalizedEvent` resolves by `workflowKey`; trade events only touch trade workflow; equity events only touch equity workflow.
+  - Runs, occurrences, expectations, and alerts are isolated per `(workflowVersionId, correlationKey)`.
+- Aggregation separation:
+  - `stage_aggregate.workflow_version_id` distinguishes trade vs equity aggregates.
+  - `group_dim_hash` reflects workflow-specific group dims (`book/region` vs `desk/region`), so wallboard queries per workflow return independent counts.
+- Wallboard display:
+  - Frontend can query `/workflows/{tradeVersionId}/aggregates` and `/workflows/{equityVersionId}/aggregates` to render separate tiles/cards.
+  - Filters by `groupHash` isolate desks/regions per workflow.
+- Kafka outputs:
+  - `rule.evaluated` and `alerts.triggered` carry `workflowVersionId` and `correlationKey`, allowing downstream consumers to distinguish trade vs equity workflows.
+  - Example equity alert payload:
+    ```json
+    {
+      "dedupeKey":"<equityVersionId>:alloc-booked:EQ-555",
+      "workflowVersionId":2,
+      "workflowRunId":15,
+      "node":"alloc-booked",
+      "correlationKey":"EQ-555",
+      "severity":"red",
+      "reason":"SLA_MISSED",
+      "triggeredAt":"2024-06-10T12:07:00Z"
+    }
+    ```
+
+### 10.3 Example 3: Multiple Trades in One Workflow (wallboard grouping)
+- Scenario: Same Trade Lifecycle workflow as 10.1 with three trades arriving interleaved: `TR123`, `TR456`, `TR789`.
+- Ingestion:
+  - All events flow through `events.raw` → `events.normalized` with `workflowKey="trade-lifecycle"` and `correlationKey` per trade.
+  - Kafka partitions ensure per-correlation ordering; rule engine creates independent `workflow_run` rows for each trade.
+- Grouping and wallboard:
+  - Group hash derived from group dims (e.g., `{book:"EQD",region:"NY"}` → hash A; `{book:"EQD",region:"LN"}` → hash B).
+  - `/workflows/{id}/aggregates?groupHash=<hash>` filters per group; `/wallboard` shows latest buckets per group.
+- Example flow:
+  - `TR123` (EQD/NY) receives `TRADE_INGEST` then two `SYS2_VERIFIED` events: wallboard shows hash A with `ingest.completed=1`, `sys2-verify.completed=2`, `sys2-verify.in_flight=0`.
+  - `TR456` (EQD/LN) only has `TRADE_INGEST` so far: wallboard hash B shows `sys2-verify.in_flight=2` (expectedCount=2) waiting for validations.
+  - `TR789` (EQD/NY) ingested but no downstream events yet: hash A `sys2-verify.in_flight` increases by 2 (total for hash A reflects TR123 completed expectations plus TR789 outstanding ones).
+- Ops checks for a specific trade (e.g., TR456):
+  - Call `/items/TR456` to see `workflowVersionId`, run status, events applied, pending expectations (two `sys2-verify` rows), and any alerts.
+  - If late or out-of-order occurs, an alert will also surface via `/alerts` (optionally filtered by state) and appear in the timeline `alerts` array.
