@@ -27,7 +27,6 @@ import { StatusPillComponent } from '../../shared/components/status-pill/status-
           <div class="meta">
             <span>{{ alert.correlationKey }}</span>
             <span>{{ alert.triggeredAt }}</span>
-            <a *ngIf="alert.runbookUrl" [href]="alert.runbookUrl" target="_blank" rel="noreferrer">Runbook</a>
           </div>
           <div class="actions">
             <button type="button" (click)="ack(alert.id)">Ack</button>

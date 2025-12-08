@@ -110,8 +110,7 @@ export class MockBackendService {
       status: 'green',
       activeVersion: 'v1',
       graph: payload.graph,
-      groupDimensions: payload.graph.groupDimensions,
-      runbookUrl: payload.runbookUrl
+      groupDimensions: payload.graph.groupDimensions
     };
     this.workflows.push(workflow);
     this.wallboard.push({
@@ -230,8 +229,6 @@ export class MockBackendService {
       aggregates.push(aggregate);
     }
     aggregate.inFlight += 1;
-    aggregate.avgLatencyMs = (aggregate.avgLatencyMs ?? 0) + 100;
-    aggregate.p95LatencyMs = (aggregate.p95LatencyMs ?? 0) + 200;
   }
 
   private buildGroupHash(group?: Record<string, string>) {
@@ -262,12 +259,11 @@ export class MockBackendService {
         { key: 'sys4-settle', eventType: 'SYS4_SETTLED', terminal: true }
       ],
       edges: [
-        { from: 'ingest', to: 'sys2-verify', maxLatencySec: 300, severity: 'amber' },
+        { from: 'ingest', to: 'sys2-verify', maxLatencySec: 300, severity: 'amber', expectedCount: 2 },
         { from: 'sys2-verify', to: 'sys3-ack', maxLatencySec: 300, severity: 'red' },
-        { from: 'sys3-ack', to: 'sys4-settle', maxLatencySec: 600, severity: 'amber' }
+        { from: 'sys3-ack', to: 'sys4-settle', absoluteDeadline: '08:00Z', severity: 'amber', optional: true }
       ],
-      groupDimensions: ['book', 'region'],
-      runbookUrl: 'https://runbooks/trade'
+      groupDimensions: ['book', 'region']
     };
     const fileGraph: WorkflowGraph = {
       nodes: [
@@ -277,10 +273,9 @@ export class MockBackendService {
       ],
       edges: [
         { from: 'file-received', to: 'validated', absoluteDeadline: '08:00Z', severity: 'red' },
-        { from: 'validated', to: 'loaded', maxLatencySec: 900, severity: 'amber' }
+        { from: 'validated', to: 'loaded', maxLatencySec: 900, severity: 'amber', expectedCount: 1 }
       ],
-      groupDimensions: ['feed', 'region'],
-      runbookUrl: 'https://runbooks/file'
+      groupDimensions: ['feed', 'region']
     };
 
     this.workflows.push(
@@ -291,8 +286,7 @@ export class MockBackendService {
         status: 'amber',
         activeVersion: 'v2',
         graph: tradeGraph,
-        groupDimensions: tradeGraph.groupDimensions,
-        runbookUrl: tradeGraph.runbookUrl
+        groupDimensions: tradeGraph.groupDimensions
       },
       {
         id: 'wf-file',
@@ -301,8 +295,7 @@ export class MockBackendService {
         status: 'green',
         activeVersion: 'v1',
         graph: fileGraph,
-        groupDimensions: fileGraph.groupDimensions,
-        runbookUrl: fileGraph.runbookUrl
+        groupDimensions: fileGraph.groupDimensions
       }
     );
 
@@ -337,9 +330,7 @@ export class MockBackendService {
         inFlight: 2,
         completed: 18,
         late: 0,
-        failed: 0,
-        avgLatencyMs: 1200,
-        p95LatencyMs: 1800
+        failed: 0
       },
       {
         workflowVersionId: 'wf-trade-v2',
@@ -349,9 +340,7 @@ export class MockBackendService {
         inFlight: 3,
         completed: 15,
         late: 1,
-        failed: 0,
-        avgLatencyMs: 2400,
-        p95LatencyMs: 3200
+        failed: 0
       },
       {
         workflowVersionId: 'wf-trade-v2',
@@ -361,9 +350,7 @@ export class MockBackendService {
         inFlight: 4,
         completed: 14,
         late: 1,
-        failed: 1,
-        avgLatencyMs: 5000,
-        p95LatencyMs: 7000
+        failed: 1
       },
       {
         workflowVersionId: 'wf-trade-v2',
@@ -373,9 +360,7 @@ export class MockBackendService {
         inFlight: 1,
         completed: 12,
         late: 2,
-        failed: 0,
-        avgLatencyMs: 4200,
-        p95LatencyMs: 6500
+        failed: 0
       }
     ];
     this.aggregates['wf-file'] = [
@@ -447,8 +432,7 @@ export class MockBackendService {
           correlationKey,
           triggeredAt: this.offset(-2),
           lastTriggeredAt: this.offset(-1),
-          reason: 'SLA_MISSED',
-          runbookUrl: 'https://runbooks/trade#sys3'
+          reason: 'SLA_MISSED'
         }
       ]
     });
@@ -462,8 +446,7 @@ export class MockBackendService {
       correlationKey,
       triggeredAt: this.offset(-2),
       lastTriggeredAt: this.offset(-1),
-      reason: 'SLA_MISSED',
-      runbookUrl: 'https://runbooks/trade#sys3'
+      reason: 'SLA_MISSED'
     };
     this.alerts.set(alert.id, alert);
   }

@@ -12,7 +12,6 @@ test('rules page catalogs workflows and previews graph edits', async ({ page }) 
   await page.getByLabel('Name').fill(`Rules ${key}`);
   await page.getByLabel('Key').fill(key);
   await page.getByLabel('Created By').fill('playwright');
-  await page.getByLabel('Runbook URL').fill('https://runbooks/rules-preview');
 
   await page.getByRole('button', { name: 'Add Node' }).click();
   const nodesSection = page.locator('.section').filter({ hasText: 'Nodes' });
@@ -25,6 +24,9 @@ test('rules page catalogs workflows and previews graph edits', async ({ page }) 
   const newEdge = edgesSection.locator('.group-row').last();
   await newEdge.getByPlaceholder('ingest').fill('sys3-ack');
   await newEdge.getByPlaceholder('sys2-verify').fill('ops-review');
+  await newEdge.getByPlaceholder('08:00Z').fill('07:30Z');
+  await newEdge.getByPlaceholder('1').fill('2');
+  await newEdge.getByRole('checkbox').check();
 
   await expect(page.locator('app-graph-canvas')).toBeVisible();
   await captureStep(page, `rules-preview-${key}.png`);

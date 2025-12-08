@@ -96,6 +96,13 @@ public class WorkflowService {
                 if (e.get("maxLatencySec") != null) {
                     edge.setMaxLatencySec(((Number) e.get("maxLatencySec")).intValue());
                 }
+                if (e.get("absoluteDeadline") != null) {
+                    edge.setAbsoluteDeadline(e.get("absoluteDeadline").toString());
+                }
+                edge.setOptional(Boolean.TRUE.equals(e.get("optional")));
+                if (e.get("expectedCount") != null) {
+                    edge.setExpectedCount(((Number) e.get("expectedCount")).intValue());
+                }
                 edge.setSeverity(e.get("severity") != null ? e.get("severity").toString() : null);
                 workflowEdgeRepository.save(edge);
             }

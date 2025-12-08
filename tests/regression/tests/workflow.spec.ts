@@ -9,7 +9,6 @@ test('workflow lifecycle supports CRUD-style create/read drill with tiles', asyn
   await page.getByLabel('Name').fill(workflowName);
   await page.getByLabel('Key').fill(workflowKey);
   await page.getByLabel('Created By').fill('playwright');
-  await page.getByLabel('Runbook URL').fill('https://runbooks/playwright');
   await page.getByLabel('Group Dimensions (comma separated)').fill('book,region,desk');
 
   await page.getByRole('button', { name: 'Add Node' }).click();
@@ -22,7 +21,9 @@ test('workflow lifecycle supports CRUD-style create/read drill with tiles', asyn
   const newEdge = page.locator('.section').filter({ hasText: 'Edges' }).locator('.group-row').last();
   await newEdge.getByPlaceholder('ingest').fill('sys3-ack');
   await newEdge.getByPlaceholder('sys2-verify').fill('qa-check');
-  await newEdge.locator('input[type="number"]').fill('600');
+  await newEdge.getByPlaceholder('300').fill('600');
+  await newEdge.getByPlaceholder('08:00Z').fill('09:00Z');
+  await newEdge.getByPlaceholder('1').fill('3');
   await captureStep(page, `rules-form-${workflowKey}.png`);
 
   await page.getByRole('button', { name: 'Create' }).click();

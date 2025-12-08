@@ -13,6 +13,7 @@ export interface WorkflowEdge {
   to: string;
   maxLatencySec?: number;
   absoluteDeadline?: string;
+  expectedCount?: number;
   severity?: Severity;
   optional?: boolean;
 }
@@ -21,7 +22,6 @@ export interface WorkflowGraph {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   groupDimensions?: string[];
-  runbookUrl?: string;
 }
 
 export interface WorkflowSummary {
@@ -32,7 +32,6 @@ export interface WorkflowSummary {
   activeVersion?: string;
   graph?: WorkflowGraph;
   groupDimensions?: string[];
-  runbookUrl?: string;
 }
 
 export interface WallboardCountdown {
@@ -52,8 +51,6 @@ export interface StageAggregate {
   completed: number;
   late: number;
   failed: number;
-  avgLatencyMs?: number;
-  p95LatencyMs?: number;
 }
 
 export interface WallboardGroupTile {
@@ -85,7 +82,6 @@ export interface AlertSummary {
   triggeredAt?: string;
   lastTriggeredAt?: string;
   reason?: string;
-  runbookUrl?: string;
 }
 
 export interface Alert extends AlertSummary {
@@ -128,7 +124,6 @@ export interface CreateWorkflowRequest {
   key: string;
   createdBy: string;
   graph: WorkflowGraph;
-  runbookUrl?: string;
 }
 
 export interface IngestRequest {

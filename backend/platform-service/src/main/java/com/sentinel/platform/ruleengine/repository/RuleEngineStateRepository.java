@@ -104,17 +104,22 @@ public class RuleEngineStateRepository {
                 select id, due_at, severity, status
                 from expectation
                 where workflow_run_id = ? and to_node_key = ? and status in ('pending','fired')
+                order by due_at
+                limit 1
                 """, (rs, rowNum) -> new ExpectationRecord(
                 rs.getLong("id"),
                 rs.getTimestamp("due_at").toInstant(),
                 rs.getString("severity"),
                 rs.getString("status")
         ), runId, toNodeKey);
+        if (due.isEmpty()) {
+            return java.util.List.of();
+        }
         jdbcTemplate.update("""
                 update expectation
                 set status = 'cleared', lock_owner = null
-                where workflow_run_id = ? and to_node_key = ? and status in ('pending','fired')
-                """, runId, toNodeKey);
+                where id = ?
+                """, due.get(0).id());
         return due;
     }
 
@@ -165,6 +170,15 @@ public class RuleEngineStateRepository {
                 rs.getString("correlation_key"),
                 rs.getString("group_dims")
         ), runId);
+    }
+
+    public boolean hasOptionalInbound(Long workflowVersionId, String nodeKey) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from workflow_edge we
+                join workflow_node wn_to on we.to_node_id = wn_to.id
+                where wn_to.workflow_version_id = ? and wn_to.node_key = ? and we.optional = true
+                """, Integer.class, workflowVersionId, nodeKey);
+        return count != null && count > 0;
     }
 
     public record OutgoingEdge(String toNodeKey, Integer maxLatencySec, String severity, String absoluteDeadline, boolean optional, Integer expectedCount) {}

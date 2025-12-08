@@ -39,7 +39,7 @@
 - Ordering enforcement: detect out-of-order events or duplicates; configurable handling (drop, flag, alert).
 - Aggregations: maintain counts, rates, backlog, and aging per workflow, stage, and grouping key.
 - Lifecycle view: reconstruct timeline for a specific item; show timestamps, duration per stage, last event payload excerpt.
-- Alerting: configurable channels (email and DL); severity levels; suppressions, maintenance windows, and deduplication.
+- Alerting: configurable channels (email and DL); severity levels; suppressions and deduplication.
 - Status model: green/amber/red per workflow, stage, and group; derived from SLAs and rule violations.
 - Configuration: versioned rules; UI and API for create/read/update; validation and dry-run/simulate mode.
 - Observability: dashboards for current status and trends; searchable event log with filter.
@@ -49,7 +49,7 @@
 - Visual workflow maps that mirror configured lifecycle graphs; each node/edge uses green/amber/red to show SLA state, with pulsing/blink on red for attention.
 - Big-screen/NOC mode: auto-refreshing, high-contrast layout optimized for wallboards; shows top-level workflows with drill-in to groups (e.g., book/region) and per-stage counts/backlog.
 - Per-stage tiles: in-flight, completed, late, and failed counts; aging buckets; timers counting down to next expected event or absolute SLA (e.g., file due 08:00).
-- Alert strip and acknowledgment: surface active alerts with severity, auto-deduped; allow ack/suppress with reason; link to runbook; show time since breach.
+- Alert strip and acknowledgment: surface active alerts with severity, auto-deduped; allow ack/suppress with reason; show time since breach.
 - Item lifecycle view: click-through from any tile to a specific key (tradeId/jobId) to see hop-by-hop timestamps, payload excerpt, and time spent per stage.
 - Anomaly signals: highlight rate drops/spikes vs. baseline and stalled stages; surface correlated logs/metrics when available.
 
@@ -68,7 +68,7 @@
 - Cohort/Group: shared dimension (e.g., file name + date, trade book + region) for aggregation and status.
 - SLA: deadline expressed as relative (after prior event) or absolute (clock time); includes severity and escalation path.
 - Timer/Expectation: scheduled check derived from rules to detect missing/late events.
-- Alert: emitted on rule violation; includes context (workflow, keys, offending rule), runbook link, and suppression state.
+- Alert: emitted on rule violation; includes context (workflow, keys, offending rule) and suppression state.
 
 ## Example Scenarios
 - File receipt: Expect `file_received(jobId=DAILY_FEED, date=D)` by 08:00; if not seen, timer fires, workflow status red, alert created. On arrival after deadline, mark late, show delta.

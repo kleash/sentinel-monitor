@@ -30,13 +30,12 @@ seed_workflows() {
         {"key":"sys4-settle","eventType":"SYS4_SETTLED","terminal":true}
       ],
       "edges": [
-        {"from":"ingest","to":"sys2-verify","maxLatencySec":300,"severity":"amber"},
+        {"from":"ingest","to":"sys2-verify","maxLatencySec":300,"severity":"amber","expectedCount":2},
         {"from":"sys2-verify","to":"sys3-ack","maxLatencySec":300,"severity":"red"},
-        {"from":"sys3-ack","to":"sys4-settle","maxLatencySec":900,"severity":"amber"}
+        {"from":"sys3-ack","to":"sys4-settle","absoluteDeadline":"08:00Z","severity":"amber","optional":true}
       ],
       "groupDimensions":["book","region"]
-    },
-    "runbookUrl":"https://runbooks/trade"
+    }
   }' || true
 
   post_json "/workflows" '{
@@ -51,11 +50,10 @@ seed_workflows() {
       ],
       "edges": [
         {"from":"file-received","to":"validated","absoluteDeadline":"08:00Z","severity":"red"},
-        {"from":"validated","to":"loaded","maxLatencySec":900,"severity":"amber"}
+        {"from":"validated","to":"loaded","maxLatencySec":900,"severity":"amber","expectedCount":1}
       ],
       "groupDimensions":["feed","region"]
-    },
-    "runbookUrl":"https://runbooks/file"
+    }
   }' || true
 }
 

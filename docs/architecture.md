@@ -60,8 +60,8 @@
   - APIs: `GET /workflows/{id}/aggregates?groupBy=...`; `GET /wallboard`.
   - Topics: consume `rule.evaluated`.
 - **Alerting/Notification Service**
-  - Responsibilities: manage alert lifecycle (open/ack/suppress/resolved); dedupe; fan-out to channels (email at launch, pluggable for more); store runbook links; record audit.
-  - APIs: `GET /alerts`, `POST /alerts/{id}/ack`, `POST /alerts/{id}/suppress`, `POST /alerts/{id}/resolve`, `POST /maintenance-windows`.
+  - Responsibilities: manage alert lifecycle (open/ack/suppress/resolved); dedupe; fan-out to channels (email at launch, pluggable for more); record audit.
+  - APIs: `GET /alerts`, `POST /alerts/{id}/ack`, `POST /alerts/{id}/suppress`, `POST /alerts/{id}/resolve`.
   - Topics: consume `alerts.triggered`; produce `alerts.state-changed`; send channel adapters.
 - **UI Gateway/API Service**
   - Responsibilities: single REST facade for Angular; aggregates data from state/agg/alert services; enforces authz; caching.
@@ -92,10 +92,10 @@
   - `id PK`, `workflow_run_id FK`, `from_node_key`, `to_node_key`, `due_at`, `type` (relative/absolute), `status` (pending,fired,cleared), `severity`, `created_at`, `lock_owner` (for scheduler).
   - Index: (`due_at`,`status`), (`workflow_run_id`,`to_node_key`).
 - `stage_aggregate` (partitioned daily)
-  - `id PK`, `workflow_version_id`, `group_dim_hash`, `node_key`, `bucket_start` (minute), `in_flight`, `completed`, `late`, `failed`, `avg_latency_ms`, `p95_latency_ms`.
+  - `id PK`, `workflow_version_id`, `group_dim_hash`, `node_key`, `bucket_start` (minute), `in_flight`, `completed`, `late`, `failed`.
   - Index: (`workflow_version_id`,`group_dim_hash`,`bucket_start`).
 - `alert`
-  - `id PK`, `correlation_key`, `workflow_version_id`, `node_key`, `severity`, `state` (open,ack,suppressed,resolved), `runbook_url`, `dedupe_key`, `first_triggered_at`, `last_triggered_at`, `acked_by`, `acked_at`, `suppressed_until`, `context` (JSON).
+  - `id PK`, `correlation_key`, `workflow_version_id`, `node_key`, `severity`, `state` (open,ack,suppressed,resolved), `dedupe_key`, `first_triggered_at`, `last_triggered_at`, `acked_by`, `acked_at`, `suppressed_until`.
   - Index: (`state`,`severity`), (`dedupe_key`), (`workflow_version_id`,`node_key`,`correlation_key`).
 - `user`, `role`, `user_role`, `audit_log`
   - `audit_log` captures before/after for config changes and ack/suppress actions; index on (`entity_type`,`entity_id`,`created_at`).
@@ -106,23 +106,23 @@
 - Processing per event:
   - Determine workflow(s) via `workflow_key` hint or eventType/group mapping; allow fan-out to multiple workflows; enforce per-key ordering by Kafka partitioning on `correlation_key`.
   - Idempotency: dedupe using `source_event_id + source_system` and `raw_event_id`; duplicate marks `is_duplicate=true` and can be ignored or flagged per rule.
-  - Ordering violations: compare expected next nodes; if out-of-order, flag `order_violation`, optionally create alert.
+  - Ordering violations: compare expected next nodes; if out-of-order and no optional inbound edge allows it, flag `order_violation`, optionally create alert.
   - State transition: mark node complete, set timestamps, recompute workflow status (green/amber/red) from SLA flags.
-  - Expectations: for each outgoing edge create `expectation` row with `due_at = event_time + max_latency` or absolute deadline; cancel/clear expectations when satisfied.
+  - Expectations: for each outgoing edge create `expected_count` pending rows (default 1) unless the edge is marked `optional`; `due_at = event_time + max_latency` or absolute deadline; cancel/clear one expectation per matching event; remaining expectations continue to track outstanding occurrences.
 - Timer handling:
   - Expectation Scheduler polls `expectation` where `status=pending` and `due_at<=now`; locks row (`UPDATE ... WHERE status=pending LIMIT ...` with ShedLock-style owner) and emits synthetic missed event containing workflowRunId, edge info, severity.
   - Ensures exactly-once firing via `status` transitions and idempotent synthetic events (dedupe_key includes expectation id + due_at).
 - SLA evaluation:
   - Relative SLA: check when target node arrival vs `due_at`; mark `is_late` and severity; stage and workflow statuses derive worst severity.
   - Absolute SLA: precompute day-specific deadline using tz; create expectation at ingest.
-  - Batch counts: compare observed count vs expected_count on edge; raise amber when near limit, red when breached.
+  - Batch counts: represent expected multiplicity via `expected_count` by creating multiple expectations; each event clears one, and remaining expectations can fire timers if missed.
 
 ## Observability & Command Center UI (Angular)
 - Layout:
   - Wallboard mode: grid of workflows; each tile shows overall status, key group dimensions (e.g., region/book), in-flight/backlog, timers counting down; auto-refresh + dark/high-contrast theme.
   - Workflow view: left panel list of workflows, main canvas renders lifecycle graph with nodes colored green/amber/red, edges showing timer countdown or late badge; blink/pulse on red.
   - Stage tiles: per-node cards showing counts (in-flight, completed, late, failed), aging histogram, recent alerts, "time to SLA" countdown.
-  - Alert strip: sticky header showing active alerts with severity color, time since breach, ack/suppress buttons, runbook link.
+  - Alert strip: sticky header showing active alerts with severity color, time since breach, ack/suppress buttons.
   - Item drill-down: modal/page showing timeline of events for `correlation_key`, hop timestamps, durations, payload excerpt, related alerts.
   - Time display: backend in UTC; UI displays in system timezone with toggle to UTC for triage consistency.
 - Component structure (Angular):
@@ -132,11 +132,10 @@
   - Accessibility: keyboard navigation, high-contrast palettes, blink replaced with pulse for WCAG.
 
 ## Alerting & Notification
-- Lifecycle: `open` (first trigger) → `ack` (human) → `suppressed` (manual or maintenance window) → `resolved` (condition clears) → `closed` (optional archive). Auto-resolve when rule condition clears and no new triggers within cool-down.
+- Lifecycle: `open` (first trigger) → `ack` (human) → `suppressed` (manual) → `resolved` (condition clears) → `closed` (optional archive). Auto-resolve when rule condition clears and no new triggers within cool-down.
 - Dedupe: `dedupe_key = workflowVersionId + nodeKey + correlationKey + ruleCode`; new triggers update `last_triggered_at` and increment count instead of new rows.
-- Suppressions: maintenance windows (time range + scope), manual suppress with reason + expiry; suppressed alerts still logged but no notifications.
-- Channels: email (SMTP) at launch; pluggable adapter interface to add webhook/Teams/PagerDuty later; channel templates include context and runbook URL.
-- Runbooks: stored per workflow/node severity; link surfaced in alert payload and UI; allow markdown rendering.
+- Suppressions: manual suppress with reason + expiry; suppressed alerts still logged but no notifications.
+- Channels: email (SMTP) at launch; pluggable adapter interface to add webhook/Teams/PagerDuty later.
 
 ## Security & Ops
 - Authn/authz: OIDC (Keycloak or corporate IdP); JWT validation in each service; roles enforced at API; fine-grained permissions for config changes and acknowledgements.
@@ -200,12 +199,11 @@
           {"key":"sys3-ack","eventType":"SYS3_ACK","terminal":true}
         ],
         "edges": [
-          {"from":"ingest","to":"sys2-verify","maxLatencySec":300,"severity":"red"},
-          {"from":"sys2-verify","to":"sys3-ack","maxLatencySec":300,"severity":"amber"}
+          {"from":"ingest","to":"sys2-verify","maxLatencySec":300,"severity":"red","expectedCount":2},
+          {"from":"sys2-verify","to":"sys3-ack","absoluteDeadline":"08:00Z","severity":"amber","optional":true}
         ]
       },
-      "groupDimensions":["book","region"],
-      "runbookUrl":"https://runbooks/trade"
+      "groupDimensions":["book","region"]
     }
     ```
 - Kafka topic schemas (JSON):
@@ -225,8 +223,8 @@
     }
     ```
   - `synthetic.missed`: `{"expectationId":123,"workflowRunId":456,"fromNode":"sys2-verify","toNode":"sys3-ack","dueAt":"...","severity":"red","dedupeKey":"exp-123-20240509"}`
-  - `rule.evaluated`: `{"workflowRunId":456,"node":"sys3-ack","status":"green","late":false,"orderViolation":false,"metrics":{"latencyMs":3200}}`
-  - `alerts.triggered`: `{"dedupeKey":"...","workflowRunId":456,"node":"sys3-ack","correlationKey":"TR123","severity":"red","reason":"SLA_MISSED","runbookUrl":"...","context":{...}}`
+  - `rule.evaluated`: `{"workflowRunId":456,"workflowVersionId":12,"node":"sys3-ack","status":"green","late":false,"orderViolation":false,"inFlightDeltas":{"sys3-ack":1},"completedDelta":1,"lateDelta":0,"failedDelta":0,"groupHash":"abc123","eventTime":"...","receivedAt":"..." }`
+  - `alerts.triggered`: `{"dedupeKey":"...","workflowRunId":456,"node":"sys3-ack","correlationKey":"TR123","severity":"red","reason":"SLA_MISSED","triggeredAt":"..."}` 
 - DDL outline (Flyway-friendly):
   ```sql
   CREATE TABLE event_raw (

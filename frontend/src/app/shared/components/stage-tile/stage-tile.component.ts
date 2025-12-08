@@ -40,16 +40,6 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
           <dd>{{ aggregate?.failed ?? 0 }}</dd>
         </div>
       </dl>
-      <footer>
-        <div class="metric" *ngIf="aggregate?.avgLatencyMs">
-          avg latency
-          <span>{{ aggregate?.avgLatencyMs }}ms</span>
-        </div>
-        <div class="metric" *ngIf="aggregate?.p95LatencyMs">
-          p95
-          <span>{{ aggregate?.p95LatencyMs }}ms</span>
-        </div>
-      </footer>
     </article>
   `,
   styles: [
@@ -99,18 +89,6 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
       }
       .failed.alerting dd {
         color: var(--red-strong);
-      }
-      footer {
-        display: flex;
-        gap: 1rem;
-        margin-top: 0.8rem;
-        font-size: 0.85rem;
-        opacity: 0.9;
-      }
-      .metric span {
-        display: inline-block;
-        margin-left: 0.2rem;
-        font-weight: 700;
       }
     `
   ],

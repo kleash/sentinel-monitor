@@ -14,7 +14,7 @@
 4) **Rule Engine Core** — Event consumption + workflow resolution/fan-out, state persisted (`workflow_run`, `event_occurrence`, `expectation`), `rule.evaluated` emitted, replay endpoint bounded.
 5) **Expectation Scheduler (Timers)** — Locked polling with ShedLock, `synthetic.missed` emitted within ≤1 minute target, lag metrics/alerts.
 6) **Aggregation & Read Models** — `stage_aggregate` maintained, wallboard/aggregate APIs live, cached in UI Gateway.
-7) **Alerting & Notifications** — Alert lifecycle persisted/deduped, email adapter live, suppression/maintenance windows, DLQ + metrics.
+7) **Alerting & Notifications** — Alert lifecycle persisted/deduped, email adapter live, suppression, DLQ + metrics.
 8) **UI Gateway & Angular UI** — Read/query endpoints stable. Wallboard/workflow/item/alerts/rules pages with WebSocket push + polling fallback, auth flows, accessibility/responsiveness.
 9) **Hardening & Ops Readiness** — Entry: end-to-end happy path proven. Exit: perf/scale/chaos/replay drills, runbooks, retention/archival jobs scheduled, go-live checklist.
 
@@ -45,7 +45,7 @@ Parallelization: after phase 1, phases 2 and 3 can proceed in parallel; phase 6 
   - APIs `/workflows/{id}/aggregates`, `/wallboard`. Acceptance: contract tests green; caches invalidate on config update.
 - **Alerting (7)** — blocked on `alerts.triggered`.
   - Alert lifecycle (open/ack/suppress/resolved), dedupe on key, audit log. Acceptance: repeated triggers update `last_triggered_at`; audit captures actor/reason.
-  - Suppression/maintenance windows; email adapter with templates; DLQ on failures. Acceptance: suppressed alerts skip email; DLQ populates on channel errors.
+  - Suppression; email adapter with templates; DLQ on failures. Acceptance: suppressed alerts skip email; DLQ populates on channel errors.
 - **UI Gateway & Angular UI (8)** — depends on read APIs; can mock early.
   - UI Gateway endpoints: workflows list/graph/tiles, items timeline, alerts console, rules CRUD proxy, `/auth/me`; caching + authz. Acceptance: unauthorized requests rejected; cached responses refreshed on config events.
   - WebSocket push for wallboard/alerts with polling fallback. Acceptance: disconnect forces polling without data loss.
@@ -74,7 +74,7 @@ Parallelization: after phase 1, phases 2 and 3 can proceed in parallel; phase 6 
   - Consume `rule.evaluated`; upsert `stage_aggregate` (partitioned); APIs `/workflows/{id}/aggregates`, `/wallboard`; caching.
   - Tests: aggregation correctness, partition rollover, API contracts.
 - **Alerting/Notification Service**
-  - Consume `alerts.triggered`; manage `alert` table; dedupe/suppress/ack/resolved; maintenance windows; email adapter; audit.
+  - Consume `alerts.triggered`; manage `alert` table; dedupe/suppress/ack/resolved; email adapter; audit.
   - DLQ and retry/backoff with circuit breaker; metrics by state/severity.
   - Tests: dedupe logic, suppression, email mock, DLQ path.
 - **UI Gateway/API**
@@ -87,7 +87,7 @@ Parallelization: after phase 1, phases 2 and 3 can proceed in parallel; phase 6 
 ## Data & Schema Tasks
 - Flyway migrations for all tables in architecture: `event_raw`, `workflow`/`workflow_version`/`workflow_node`/`workflow_edge`, `workflow_run`, `event_occurrence`, `expectation`, `stage_aggregate`, `alert`, `user`/`role`/`user_role`, `audit_log`; partition `event_raw` and `stage_aggregate`; create archival tables and partition move jobs.
 - Indexes per design (event type/time, correlation/workflow, expectation due/status, aggregates by workflow/group/bucket, alerts state/severity, audit by entity/time).
-- Seed non-prod data: sample workflows/rules, roles/users, runbook samples.
+- Seed non-prod data: sample workflows/rules and roles/users.
 - Schema registry artifacts for all Kafka topics; CI compatibility checks; evolution guidelines documented.
 - Data backfill/replay scripts to load historical events into `event_raw` and invoke `/replay` with replay flag to avoid duplicate alerts.
 

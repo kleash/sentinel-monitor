@@ -157,7 +157,8 @@ public class RuleEngineService {
 
         List<ExpectationRecord> cleared = stateRepository.clearExpectations(runId, node.nodeKey(), event.getReceivedAt());
         boolean late = cleared.stream().anyMatch(rec -> event.getReceivedAt().isAfter(rec.dueAt()));
-        boolean orderViolation = cleared.isEmpty() && !node.start();
+        boolean optionalInbound = stateRepository.hasOptionalInbound(version.getId(), node.nodeKey());
+        boolean orderViolation = cleared.isEmpty() && !node.start() && !optionalInbound;
 
         Map<String, Integer> inFlightDeltas = new HashMap<>();
         if (!cleared.isEmpty()) {
@@ -166,9 +167,15 @@ public class RuleEngineService {
         }
 
         for (OutgoingEdge edge : stateRepository.fetchOutgoingEdges(version.getId(), node.nodeKey())) {
+            if (edge.optional()) {
+                continue;
+            }
             Instant dueAt = computeDueAt(event.getEventTime(), edge);
-            stateRepository.createExpectation(runId, node.nodeKey(), edge.toNodeKey(), dueAt, edge.severity());
-            inFlightDeltas.merge(edge.toNodeKey(), 1, Integer::sum);
+            int expectedCount = edge.expectedCount() != null && edge.expectedCount() > 0 ? edge.expectedCount() : 1;
+            for (int i = 0; i < expectedCount; i++) {
+                stateRepository.createExpectation(runId, node.nodeKey(), edge.toNodeKey(), dueAt, edge.severity());
+                inFlightDeltas.merge(edge.toNodeKey(), 1, Integer::sum);
+            }
             log.debug("Created expectation runId={} fromNode={} toNode={} dueAt={} severity={}", runId, node.nodeKey(), edge.toNodeKey(), dueAt, edge.severity());
         }
 
@@ -207,7 +214,6 @@ public class RuleEngineService {
             alert.setSeverity(severityFromExpectations(cleared, orderViolation));
             alert.setReason(late ? "SLA_MISSED" : "ORDER_VIOLATION");
             alert.setDedupeKey(version.getId() + ":" + node.nodeKey() + ":" + event.getCorrelationKey());
-            alert.setContext(event.getPayload());
             alert.setTriggeredAt(event.getReceivedAt());
             eventPublisher.publishAlertTriggered(alert);
         }

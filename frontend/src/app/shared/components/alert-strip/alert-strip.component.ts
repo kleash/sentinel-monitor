@@ -19,7 +19,6 @@ import { StatusPillComponent } from '../status-pill/status-pill.component';
           </div>
           <div class="meta">
             <span>{{ alert.reason ?? 'SLA breach' }}</span>
-            <a *ngIf="alert.runbookUrl" [href]="alert.runbookUrl" target="_blank" rel="noreferrer">Runbook</a>
           </div>
           <div class="actions">
             <button type="button" (click)="ack.emit(alert.id)">Ack</button>

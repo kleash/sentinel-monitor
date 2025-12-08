@@ -28,20 +28,18 @@ public class AlertRepository {
         String state = "open";
         Instant now = Optional.ofNullable(alert.getTriggeredAt()).orElse(Instant.now());
         jdbcTemplate.update("""
-                INSERT INTO alert (correlation_key, workflow_version_id, node_key, severity, state, runbook_url, dedupe_key, first_triggered_at, last_triggered_at, context)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE last_triggered_at = VALUES(last_triggered_at), severity = VALUES(severity), state = CASE WHEN state = 'resolved' THEN 'open' ELSE state END, context = VALUES(context)
+                INSERT INTO alert (correlation_key, workflow_version_id, node_key, severity, state, dedupe_key, first_triggered_at, last_triggered_at)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE last_triggered_at = VALUES(last_triggered_at), severity = VALUES(severity), state = CASE WHEN state = 'resolved' THEN 'open' ELSE state END
                 """,
                 correlationKey,
                 workflowVersionId,
                 node,
                 severity,
                 state,
-                alert.getRunbookUrl(),
                 dedupeKey,
                 Timestamp.from(now.atZone(ZoneOffset.UTC).toInstant()),
-                Timestamp.from(now.atZone(ZoneOffset.UTC).toInstant()),
-                alert.getContext() != null ? alert.getContext().toString() : null
+                Timestamp.from(now.atZone(ZoneOffset.UTC).toInstant())
         );
     }
 

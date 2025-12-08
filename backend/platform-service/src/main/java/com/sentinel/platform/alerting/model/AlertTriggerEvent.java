@@ -11,8 +11,6 @@ public class AlertTriggerEvent {
     private String correlationKey;
     private String severity;
     private String reason;
-    private String runbookUrl;
-    private Map<String, Object> context;
     private Instant triggeredAt;
 
     public String getDedupeKey() {
@@ -69,22 +67,6 @@ public class AlertTriggerEvent {
 
     public void setReason(String reason) {
         this.reason = reason;
-    }
-
-    public String getRunbookUrl() {
-        return runbookUrl;
-    }
-
-    public void setRunbookUrl(String runbookUrl) {
-        this.runbookUrl = runbookUrl;
-    }
-
-    public Map<String, Object> getContext() {
-        return context;
-    }
-
-    public void setContext(Map<String, Object> context) {
-        this.context = context;
     }
 
     public Instant getTriggeredAt() {

@@ -152,7 +152,7 @@ class RuleEngineIntegrationTest {
         waitFor(() -> jdbcTemplate.queryForObject("select count(*) from workflow_run", Integer.class) > 0, Duration.ofSeconds(15));
 
         Integer expectationCount = jdbcTemplate.queryForObject("select count(*) from expectation where status = 'pending'", Integer.class);
-        assertThat(expectationCount).isEqualTo(1);
+        assertThat(expectationCount).isEqualTo(2);
         Instant dueAt = jdbcTemplate.queryForObject("select due_at from expectation limit 1", Timestamp.class).toInstant();
         System.out.println("Expectation dueAt=" + dueAt + " now=" + Instant.now());
 
@@ -209,7 +209,7 @@ class RuleEngineIntegrationTest {
                 Map.of("key", "to-system", "eventType", "ORDER_TO_SYSTEM")
         ));
         graph.put("edges", List.of(
-                Map.of("from", "ingest", "to", "to-system", "maxLatencySec", 60, "severity", "red")
+                Map.of("from", "ingest", "to", "to-system", "maxLatencySec", 60, "severity", "red", "expectedCount", 2, "optional", false)
         ));
         request.setGraph(graph);
         workflowService.createWorkflow(request);

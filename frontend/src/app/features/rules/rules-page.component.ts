@@ -42,10 +42,6 @@ import { GraphCanvasComponent } from '../../shared/components/graph-canvas/graph
             <input formControlName="createdBy" placeholder="ops-user" />
           </label>
           <label>
-            Runbook URL
-            <input formControlName="runbookUrl" placeholder="https://runbooks/..." />
-          </label>
-          <label>
             Group Dimensions (comma separated)
             <input formControlName="groupDimensions" placeholder="book,region" />
           </label>
@@ -68,11 +64,14 @@ import { GraphCanvasComponent } from '../../shared/components/graph-canvas/graph
               <input formControlName="from" placeholder="ingest" />
               <input formControlName="to" placeholder="sys2-verify" />
               <input type="number" formControlName="maxLatencySec" placeholder="300" />
+              <input formControlName="absoluteDeadline" placeholder="08:00Z" />
+              <input type="number" formControlName="expectedCount" placeholder="1" />
               <select formControlName="severity">
                 <option value="green">green</option>
                 <option value="amber">amber</option>
                 <option value="red">red</option>
               </select>
+              <label><input type="checkbox" formControlName="optional" /> Optional</label>
               <button type="button" (click)="removeEdge(i)">Remove</button>
             </div>
             <button type="button" (click)="addEdge()">Add Edge</button>
@@ -175,7 +174,6 @@ export class RulesPageComponent implements OnInit {
       name: this.fb.control('', { validators: [Validators.required] }),
       key: this.fb.control('', { validators: [Validators.required] }),
       createdBy: this.fb.control('ops-user', { validators: [Validators.required] }),
-      runbookUrl: this.fb.control(''),
       groupDimensions: this.fb.control('book,region'),
       nodes: this.fb.array([
         this.fb.group({
@@ -190,7 +188,10 @@ export class RulesPageComponent implements OnInit {
           from: this.fb.control('ingest', { nonNullable: true }),
           to: this.fb.control('sys2-verify', { nonNullable: true }),
           maxLatencySec: this.fb.control(300, { nonNullable: false }),
-          severity: this.fb.control<'green' | 'amber' | 'red'>('amber', { nonNullable: true })
+          absoluteDeadline: this.fb.control('', { nonNullable: false }),
+          expectedCount: this.fb.control<number | null>(1, { nonNullable: false }),
+          severity: this.fb.control<'green' | 'amber' | 'red'>('amber', { nonNullable: true }),
+          optional: this.fb.control(false, { nonNullable: true })
         })
       ])
     });
@@ -246,7 +247,10 @@ export class RulesPageComponent implements OnInit {
         from: this.fb.control('', { nonNullable: true }),
         to: this.fb.control('', { nonNullable: true }),
         maxLatencySec: this.fb.control(300, { nonNullable: false }),
-        severity: this.fb.control<'green' | 'amber' | 'red'>('amber', { nonNullable: true })
+        absoluteDeadline: this.fb.control('', { nonNullable: false }),
+        expectedCount: this.fb.control<number | null>(1, { nonNullable: false }),
+        severity: this.fb.control<'green' | 'amber' | 'red'>('amber', { nonNullable: true }),
+        optional: this.fb.control(false, { nonNullable: true })
       })
     );
   }
@@ -265,7 +269,6 @@ export class RulesPageComponent implements OnInit {
       name: value.name!,
       key: value.key!,
       createdBy: value.createdBy!,
-      runbookUrl: value.runbookUrl ?? '',
       graph: {
         nodes: value.nodes ?? [],
         edges: value.edges ?? [],

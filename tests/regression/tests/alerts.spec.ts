@@ -21,6 +21,5 @@ test('alerts console supports full lifecycle with evidence', async ({ page }) =>
   await alert.getByRole('button', { name: 'Resolve' }).click();
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(alert.locator('.state')).toHaveText(/resolved/i);
-  await expect(alert.locator('a', { hasText: 'Runbook' })).toBeVisible();
   await captureStep(page, 'alerts-console-resolved.png');
 });

@@ -25,7 +25,7 @@ flowchart LR
 ## Coverage (happy-path + ops views)
 - **Workflow CRUD/readiness**: create workflow via `/rules`, verify catalogue entry, drill into `/workflow/:key` stage tiles/graph.
 - **Wallboard**: production-support metrics (In Flight/Late/Failed), countdown badges, group drill-down to workflow view.
-- **Alerts console**: ack → suppress → resolve lifecycle with runbook visibility.
+- **Alerts console**: ack → suppress → resolve lifecycle.
 - **Rules form usage**: add nodes/edges, preview graph updates, submit new definitions.
 - **Live ingest**: submit events via `/ingest`, observe wallboard metric bump and `/item/:correlationKey` timeline capture.
 - **Item timeline**: expectations, alerts, hop-by-hop events remain visible after refresh.

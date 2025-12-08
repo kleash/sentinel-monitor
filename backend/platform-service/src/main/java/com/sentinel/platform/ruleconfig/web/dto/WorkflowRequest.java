@@ -21,8 +21,6 @@ public class WorkflowRequest {
 
     private List<String> groupDimensions;
 
-    private String runbookUrl;
-
     public String getName() {
         return name;
     }
@@ -61,13 +59,5 @@ public class WorkflowRequest {
 
     public void setGroupDimensions(List<String> groupDimensions) {
         this.groupDimensions = groupDimensions;
-    }
-
-    public String getRunbookUrl() {
-        return runbookUrl;
-    }
-
-    public void setRunbookUrl(String runbookUrl) {
-        this.runbookUrl = runbookUrl;
     }
 }

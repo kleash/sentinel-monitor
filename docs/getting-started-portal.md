@@ -42,12 +42,12 @@ Seed contents:
 - **Workflow view (`/workflow/:key`)**: lifecycle graph (SVG canvas), stage tiles per node, group selector, alert strip with ack/suppress/resolve.
 - **Item timeline (`/item/:correlationKey`)**: hop-by-hop events, pending expectations, linked alerts and countdowns.
 - **Alerts console (`/alerts`)**: list, filter by state (mock backend returns all), lifecycle actions.
-- **Rules (`/rules`)**: workflow catalog list and creation form (nodes/edges, group dimensions, runbook URL) with live graph preview.
+- **Rules (`/rules`)**: workflow catalog list and creation form (nodes/edges, group dimensions, SLA fields) with live graph preview.
 - **Ingest simulator (`/ingest`)**: send sample events to `/ingest` endpoint; useful for ops smoke tests and demos.
 
 ## Configuration team guide
 1) **Create/modify workflows**  
-   - UI: `/rules` page supports nodes/edges, group dimensions, and runbook URL previewed on the graph canvas.  
+   - UI: `/rules` page supports nodes/edges, group dimensions, and edge SLA attributes (`maxLatencySec`, `absoluteDeadline`, `expectedCount`, `optional`) previewed on the graph canvas.  
    - API: `POST /workflows` (see `docs/frontend-api.md`) with nodes/edges; published immediately as active version.
 2) **Ingest real events**  
    - Kafka-first: produce to `events.raw` with `correlationKey`, `eventType`, `eventTime`, `workflowKey` (hint).  
@@ -56,9 +56,6 @@ Seed contents:
 3) **Group dimensions & SLAs**  
    - Edges accept `maxLatencySec` or `absoluteDeadline`; nodes carry `eventType`.  
    - Group dimensions inform wallboard grouping (e.g., `book`, `region`, `feed`).  
-4) **Runbooks**  
-   - Set `runbookUrl` per workflow to surface links on alerts and detail pages.
-
 ## Production support guide
 - **Monitor**: default landing `/wallboard`; drill into `/workflow/:key` and `/item/:correlationKey` from tiles/alerts.  
 - **Act**: `/alerts` for ack/suppress/resolve; alert strip also exposes actions inline on workflow pages.  
