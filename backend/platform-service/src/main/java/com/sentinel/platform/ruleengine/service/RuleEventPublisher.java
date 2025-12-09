@@ -1,65 +1,54 @@
 package com.sentinel.platform.ruleengine.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
 import com.sentinel.platform.alerting.model.AlertTriggerEvent;
-import com.sentinel.platform.ruleengine.config.RuleEngineProperties;
+import com.sentinel.platform.alerting.service.AlertingService;
+import com.sentinel.platform.aggregation.service.AggregationService;
 import com.sentinel.platform.ruleengine.model.RuleEvaluatedEvent;
 
 @Component
 public class RuleEventPublisher {
 
     /**
-     * Ships rule engine outcomes to Kafka for downstream aggregation and alerting.
-     * Uses explicit keys so partitions stay aligned per correlation key.
+     * Emits rule outcomes internally without Kafka hops: directly invokes aggregation and alerting services
+     * to keep the workflow in-process while still serializing payloads consistently.
      */
     private static final Logger log = LoggerFactory.getLogger(RuleEventPublisher.class);
 
-    private final KafkaTemplate<Object, Object> kafkaTemplate;
-    private final RuleEngineProperties properties;
+    private final AggregationService aggregationService;
+    private final AlertingService alertingService;
     private final ObjectMapper objectMapper;
 
-    public RuleEventPublisher(KafkaTemplate<Object, Object> kafkaTemplate,
-                              RuleEngineProperties properties,
+    public RuleEventPublisher(AggregationService aggregationService,
+                              AlertingService alertingService,
                               ObjectMapper objectMapper) {
-        this.kafkaTemplate = kafkaTemplate;
-        this.properties = properties;
+        this.aggregationService = aggregationService;
+        this.alertingService = alertingService;
         this.objectMapper = objectMapper;
     }
 
     public void publishRuleEvaluated(RuleEvaluatedEvent event) {
-        send(properties.getRuleEvaluatedTopic(), event.getCorrelationKey(), serialize(event));
-        log.info("Published rule evaluated topic={} correlationKey={} workflowVersionId={} node={}",
-                properties.getRuleEvaluatedTopic(), event.getCorrelationKey(), event.getWorkflowVersionId(), event.getNode());
+        aggregationService.handleRuleEvaluated(serialize(event));
+        log.info("Published rule evaluated in-process correlationKey={} workflowVersionId={} node={}",
+                event.getCorrelationKey(), event.getWorkflowVersionId(), event.getNode());
     }
 
     public void publishAlertTriggered(AlertTriggerEvent alert) {
-        String key = alert.getCorrelationKey() != null ? alert.getCorrelationKey() : alert.getDedupeKey();
-        send(properties.getAlertsTriggeredTopic(), key, serialize(alert));
-        log.info("Published alert triggered topic={} correlationKey={} dedupeKey={} workflowRunId={}",
-                properties.getAlertsTriggeredTopic(), alert.getCorrelationKey(), alert.getDedupeKey(), alert.getWorkflowRunId());
+        alertingService.handleAlertTriggered(serialize(alert));
+        log.info("Published alert triggered in-process correlationKey={} dedupeKey={} workflowRunId={}",
+                alert.getCorrelationKey(), alert.getDedupeKey(), alert.getWorkflowRunId());
     }
 
-    private byte[] serialize(Object payload) {
+    private String serialize(Object payload) {
         try {
-            return objectMapper.writeValueAsBytes(payload);
+            return objectMapper.writeValueAsString(payload);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to serialize event payload", ex);
         }
-    }
-
-    private void send(String topic, String key, byte[] payload) {
-        Message<byte[]> message = MessageBuilder.withPayload(payload)
-                .setHeader(KafkaHeaders.TOPIC, topic)
-                .setHeader(KafkaHeaders.KEY, key != null ? key.getBytes(java.nio.charset.StandardCharsets.UTF_8) : null)
-                .build();
-        kafkaTemplate.send(message);
     }
 }

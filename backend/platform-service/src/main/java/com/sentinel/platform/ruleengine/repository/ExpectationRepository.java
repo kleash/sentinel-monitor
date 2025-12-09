@@ -12,6 +12,10 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class ExpectationRepository {
+    /**
+     * Scheduler-focused repository that uses JdbcTemplate for lightweight polling and updates.
+     * Kept as JDBC because the SQL needs tight control over locking/ordering for due expectations.
+     */
     private final JdbcTemplate jdbcTemplate;
 
     public ExpectationRepository(JdbcTemplate jdbcTemplate) {

@@ -3,7 +3,7 @@
 ## 1. Overview
 - Event-driven Spring Boot service that ingests raw events, applies workflow-based rules, manages expectations/timers, aggregates status, and tracks alert lifecycles.
 - Architecture style: layered with REST + Kafka adapters on the edges, service layer orchestrating logic, and JDBC/JPA repositories against MariaDB; messaging-first between stages.
-- Key technologies: Spring Boot 3, Spring Cloud Stream + Spring Kafka, MariaDB (Flyway migrations), Spring Data JPA + JdbcTemplate, OAuth2 JWT resource server, Micrometer/Actuator.
+- Key technologies: Spring Boot 3, Spring Kafka (KafkaTemplate/@KafkaListener), MariaDB (Flyway migrations), Spring Data JPA + JdbcTemplate where specialized SQL is needed, OAuth2 JWT resource server, Micrometer/Actuator.
 
 ## 2. System Architecture
 
@@ -17,20 +17,20 @@
 ### 2.2 Main Modules / Packages
 | Package/Module | Responsibility | Key Features Implemented | Important Dependencies |
 | --- | --- | --- | --- |
-| `com.sentinel.platform.ingestion` | Accept raw events (Kafka or REST), validate/normalize, persist for idempotency, publish normalized or DLQ events | `/ingest`, `rawEventsConsumer`, `events.normalized`/`events.dlq` publishing | Spring Cloud Stream `StreamBridge`, `JdbcTemplate`, Micrometer, `ingestion` properties |
+| `com.sentinel.platform.ingestion` | Accept raw events (Kafka or REST), validate/normalize, persist for idempotency, publish normalized or DLQ events | `/ingest`, `RawEventListener` (`events.raw`), Kafka publisher for `events.normalized`/`events.dlq` | Spring Kafka (`KafkaTemplate`/`@KafkaListener`), JPA for `event_raw`, Micrometer, `ingestion` properties |
 | `com.sentinel.platform.ruleconfig` | Workflow definition storage and activation | `/workflows` list/get/create; graph persistence into workflow tables | Spring Data JPA, `ObjectMapper` |
-| `com.sentinel.platform.ruleengine` | Rule evaluation, runtime state, expectation management, scheduler, read-model timeline | Kafka listeners on normalized and synthetic topics; expectation polling; `/items/{correlationKey}` | `KafkaTemplate`, `JdbcTemplate`, `Clock`, `RuleEngineProperties` |
-| `com.sentinel.platform.aggregation` | Maintain per-stage aggregates for dashboards | Kafka consumer on `rule.evaluated`; `/workflows/{id}/aggregates`, `/wallboard` | `JdbcTemplate`, `ObjectMapper` |
-| `com.sentinel.platform.alerting` | Alert upsert from rule outcomes and lifecycle actions with audit | Kafka consumer on `alerts.triggered`; `/alerts` list + ack/suppress/resolve | `JdbcTemplate`, `ObjectMapper`, `Clock` |
+| `com.sentinel.platform.ruleengine` | Rule evaluation, runtime state, expectation management, scheduler, read-model timeline | Kafka listeners on normalized/synthetic topics; expectation polling; `/items/{correlationKey}`; in-process fan-out to aggregation/alerting | `KafkaListener`, `JdbcTemplate` (runtime), JPA (config), `Clock`, `RuleEngineProperties` |
+| `com.sentinel.platform.aggregation` | Maintain per-stage aggregates for dashboards | In-process consumer of rule-evaluated; `/workflows/{id}/aggregates`, `/wallboard` | JPA `StageAggregateRepository`, `ObjectMapper` |
+| `com.sentinel.platform.alerting` | Alert upsert from rule outcomes and lifecycle actions with audit | In-process consumer of alerts-triggered; `/alerts` list + ack/suppress/resolve | JPA repositories for alert + audit, `ObjectMapper`, `Clock` |
 | `com.sentinel.platform.config` | Cross-cutting config (security, time) | OAuth2 resource server, UTC clock bean | Spring Security |
 
 ## 3. Feature & Flow Guide
 
 ### 3.1 Ingestion (REST + Kafka)
-- Business description: accept producer events, guard against malformed input, persist for dedupe, and publish normalized envelopes.
-- Entry points: `IngestController` REST (`backend/platform-service/src/main/java/com/sentinel/platform/ingestion/web/IngestController.java`); Kafka `rawEventsConsumer` (`ingestion/stream/StreamHandlers.java`).
+- Business description: accept producer events, guard against malformed input, persist for dedupe, and publish normalized envelopes. Raw vs normalized: raw requests are the inbound envelopes from external producers; normalized events are the validated, consistently shaped payloads sent to the rule engine while the original request is retained in `event_raw` for idempotency/audit.
+- Entry points: `IngestController` REST (`backend/platform-service/src/main/java/com/sentinel/platform/ingestion/web/IngestController.java`); Kafka `RawEventListener` (`ingestion/kafka/RawEventListener.java`).
 - Main packages: `ingestion.*`.
-- High-level call flow: REST POST `/ingest` → `IngestRateLimiter` → `IngestionService.normalize`/`persistAndPublish` → `EventRawRepository` (idempotent insert) → `NormalizedEventPublisher` (`events.normalized`) or `DlqPublisher`.
+- High-level call flow: REST POST `/ingest` → `IngestRateLimiter` → `IngestionService.normalize`/`persistAndPublish` → `EventRawRepository` (JPA idempotent insert) → `NormalizedEventPublisher` (`events.normalized`) or `DlqPublisher`.
 - Key database tables: `event_raw` (raw ingest with unique `(source_system, source_event_id)`).
 
 ### 3.2 Workflow Configuration
@@ -44,28 +44,28 @@
 - Business description: resolve applicable workflow versions for each normalized event, manage workflow runs, expectations, and emit evaluation + alerts.
 - Entry points: Kafka listener on `${ruleengine.normalized-topic}` in `RuleEngineListeners`.
 - Main packages: `ruleengine.*` (excluding scheduler).
-- High-level call flow: listener → `RuleEngineService.handleNormalizedEvent` → `RuleEngineStateRepository` to load/create run; clear expectations one-at-a-time; create expectations per outgoing edge (skipping optional edges, repeating per `expectedCount`, honoring `absoluteDeadline`); suppress order violations when only optional inbound edges exist → `RuleEventPublisher.publishRuleEvaluated` (`rule.evaluated`) and `publishAlertTriggered` when late/order issues → DB updates to `workflow_run`, `event_occurrence`, `expectation`.
+- High-level call flow: listener → `RuleEngineService.handleNormalizedEvent` → `RuleEngineStateRepository` to load/create run; clear expectations one-at-a-time; create expectations per outgoing edge (skipping optional edges, repeating per `expectedCount`, honoring `absoluteDeadline`); suppress order violations when only optional inbound edges exist → `RuleEventPublisher.publishRuleEvaluated` (in-process call to aggregation) and `publishAlertTriggered` (in-process call to alerting) when late/order issues → DB updates to `workflow_run`, `event_occurrence`, `expectation`.
 - Key database tables: `workflow_run`, `event_occurrence`, `expectation`.
 
 ### 3.4 Expectation Scheduler
 - Business description: poll due expectations and emit synthetic misses to close loops on timers.
 - Entry points: `ExpectationSchedulerService.scheduledPoll` (configurable fixed delay).
 - Main packages: `ruleengine.service` + `ruleengine.repository.ExpectationRepository`.
-- High-level call flow: scheduled poll → `ExpectationRepository.claimDuePending` (marks fired) → `ExpectationSchedulerService.pollAndEmit` serializes `SyntheticMissedEvent` → Kafka `${ruleengine.synthetic-topic}` → consumed by `RuleEngineService.handleSyntheticMissed` to update run and emit alert/evaluation.
+- High-level call flow: scheduled poll → `ExpectationRepository.claimDuePending` (marks fired) → `ExpectationSchedulerService.pollAndEmit` calls `RuleEngineService.handleSyntheticMissed` in-process (Kafka `${ruleengine.synthetic-topic}` still consumed for external sources) → run is updated and alert/evaluation emitted.
 - Key database tables: `expectation`.
 
 ### 3.5 Aggregation & Wallboard
 - Business description: maintain per-node counts for wallboards and per-workflow aggregates.
-- Entry points: Kafka listener on `${ruleengine.rule-evaluated-topic}`; REST `/workflows/{id}/aggregates`, `/wallboard`.
+- Entry points: in-process rule evaluation dispatch; REST `/workflows/{id}/aggregates`, `/wallboard`.
 - Main packages: `aggregation.*`.
-- High-level call flow: listener → `AggregationService.handleRuleEvaluated` → `StageAggregateRepository.upsert` per minute bucket (adjust in-flight/completed/late/failed) → REST queries the same table for views.
+- High-level call flow: rule engine publishes → `AggregationService.handleRuleEvaluated` → `StageAggregateRepository.upsert` per minute bucket (adjust in-flight/completed/late/failed) → REST queries the same table for views.
 - Key database tables: `stage_aggregate`.
 
 ### 3.6 Alert Lifecycle
 - Business description: dedupe/update alerts from rule outcomes and allow operators to ack/suppress/resolve with audit.
-- Entry points: Kafka listener on `${ruleengine.alerts-triggered-topic}`; REST `/alerts`, `/alerts/{id}/ack|suppress|resolve`.
+- Entry points: in-process alert dispatch; REST `/alerts`, `/alerts/{id}/ack|suppress|resolve`.
 - Main packages: `alerting.*`.
-- High-level call flow: listener → `AlertingService.handleAlertTriggered` → `AlertRepository.upsert`; lifecycle endpoints → `AlertingService` ack/suppress/resolve → `AlertRepository.updateState` + `AuditRepository.record`.
+- High-level call flow: rule engine publishes → `AlertingService.handleAlertTriggered` → `AlertRepository` save; lifecycle endpoints → `AlertingService` ack/suppress/resolve → `AlertRepository` save + `AuditRepository` record.
 - Key database tables: `alert`, `audit_log`.
 
 ### 3.7 Item Timeline & Read Models

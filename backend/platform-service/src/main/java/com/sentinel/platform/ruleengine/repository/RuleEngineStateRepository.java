@@ -15,6 +15,11 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class RuleEngineStateRepository {
+    /**
+     * JDBC-backed repository for rule engine runtime state. We keep JdbcTemplate here because the
+     * flow performs multi-statement upserts/reads with database-side ordering that are awkward and
+     * performance-sensitive in JPA.
+     */
 
     private final JdbcTemplate jdbcTemplate;
 

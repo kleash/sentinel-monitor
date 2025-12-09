@@ -8,13 +8,13 @@
 
 ## Architecture Overview
 - Components: Ingestion Service, Rule Config Service, Rule Engine, Expectation Scheduler (timers), Aggregation Service, Alerting/Notification Service, UI Gateway/API, Angular SPA, MariaDB. Optional Keycloak/OIDC for auth.
-- Messaging: Kafka topics for normalized events and rule outcomes; REST ingest path for Kafka-less sources (still published internally to Kafka); WebSocket push to UI; Spring Cloud Stream binders for consumer/producer; dead-letter topics for poison messages. Events can fan out to multiple workflows via Rule Engine mapping (eventType/group rules) or by producers emitting per-workflow keys.
+- Messaging: Kafka topics for normalized events and synthetic misses; REST ingest path for Kafka-less sources (still published internally to Kafka); WebSocket push to UI; Spring Kafka listeners/producers with explicit topics; dead-letter topics for poison messages. Rule outcomes and alerts now stay in-process (no internal Kafka hop).
 - Storage: MariaDB for raw events, workflow/rule metadata, item state, expectations/timers, aggregates, alerts, users/roles/audit; partitioned/TTL tables for raw/high-volume data.
 - High-level flow (ingest → eval → alert → UI):
   - Producers → Kafka `events.raw` (primary) or REST `/ingest` for Kafka-less sources → Ingestion (validate/normalize/idempotent) → MariaDB `event_raw` + publish `events.normalized`.
-  - Rule Engine consumes `events.normalized` → map to one or many workflows/rules (using workflowKey hint or eventType/group mapping) → update `item_state`/`workflow_run` → create/update expectations → emit `rule.evaluated` + aggregates.
-  - Expectation Scheduler scans `expectation` table (due timers) → generate synthetic "expected-missed" events → Rule Engine → Alerting.
-  - Alerting consumes rule outcomes and SLA breaches → dedupe/suppress → persist alert + send notifications.
+  - Rule Engine consumes `events.normalized` → map to one or many workflows/rules (using workflowKey hint or eventType/group mapping) → update `item_state`/`workflow_run` → create/update expectations → emit rule evaluation + alerts in-process to aggregation/alerting.
+  - Expectation Scheduler scans `expectation` table (due timers) → generate synthetic "expected-missed" events (in-process to rule engine; Kafka synthetic topic still accepted for external emitters) → Alerting.
+  - Alerting consumes rule outcomes and SLA breaches in-process → dedupe/suppress → persist alert + send notifications.
   - Angular UI → UI Gateway (REST) → query state/aggregates/alerts, fetch graphs, issue ack/suppress commands.
 - Component view (text):
   ```
@@ -40,7 +40,7 @@
 
 ## Service Design
 - **Ingestion Service**
-  - Responsibilities: consume Kafka `events.raw`; optional REST `/ingest` for edge cases; validate (JSON schema/Avro), normalize fields (timestamps to UTC, keys), enrich with source metadata; enforce idempotency; write `event_raw`; publish to `events.normalized`; route bad events to `events.dlq`.
+  - Responsibilities: consume Kafka `events.raw`; optional REST `/ingest` for edge cases; validate (JSON schema/Avro), normalize fields (timestamps to UTC, keys), enrich with source metadata; enforce idempotency; write `event_raw`; publish to `events.normalized`; route bad events to `events.dlq` via KafkaTemplate.
   - APIs: `POST /ingest` (idempotency-key header, payload includes eventType, eventTime, keys, groupDimensions, payload); health `/actuator/health`.
   - Topics: consume `events.raw`; produce `events.normalized`, `events.dlq`.
 - **Rule Config Service**
@@ -50,19 +50,19 @@
 - **Rule Engine Service**
   - Responsibilities: consume normalized events and synthetic missed events; resolve workflow version(s) (fan-out allowed) via workflowKey hint and eventType/group mappings; apply ordering/dup rules; advance lifecycle; emit aggregates and evaluation outcomes; persist `item_state`, `workflow_run`, `event_occurrence`.
   - APIs: `GET /items/{key}` timeline; `GET /workflows/{id}/state?group=...`; `POST /replay` to re-evaluate historical events (bounded).
-  - Topics: consume `events.normalized`, `synthetic.missed`; produce `rule.evaluated`, `metrics.stage`, `alerts.triggered`.
+  - Topics: consume `events.normalized`, `synthetic.missed`; emit rule-evaluated/alerts in-process to aggregation/alerting.
 - **Expectation Scheduler Service**
-  - Responsibilities: durable timers for relative/absolute SLAs; scans `expectation` table by `due_at <= now`; emits `synthetic.missed` events; ensures single firing via ShedLock/DB locks; polling cadence configurable via UI setting with target SLA alert latency ≤ 1 minute.
+  - Responsibilities: durable timers for relative/absolute SLAs; scans `expectation` table by `due_at <= now`; emits synthetic missed events; ensures single firing via ShedLock/DB locks; polling cadence configurable via UI setting with target SLA alert latency ≤ 1 minute.
   - APIs: none external beyond health; config via Rule Engine writing expectations.
-  - Topics: produce `synthetic.missed`; optional consume `config.workflow.updated` to refresh cache.
+  - Topics: optionally consume `synthetic.missed` from external emitters; internal scheduler dispatches directly to rule engine.
 - **Aggregation Service**
-  - Responsibilities: consume `rule.evaluated` to compute per-workflow/stage/group counts, backlog, aging; write to `stage_aggregate` table; expose for UI; maintain rolling windows.
+  - Responsibilities: consume rule evaluations to compute per-workflow/stage/group counts, backlog, aging; write to `stage_aggregate` table; expose for UI; maintain rolling windows.
   - APIs: `GET /workflows/{id}/aggregates?groupBy=...`; `GET /wallboard`.
-  - Topics: consume `rule.evaluated`.
+  - Topics: none (in-process from rule engine).
 - **Alerting/Notification Service**
   - Responsibilities: manage alert lifecycle (open/ack/suppress/resolved); dedupe; fan-out to channels (email at launch, pluggable for more); record audit.
   - APIs: `GET /alerts`, `POST /alerts/{id}/ack`, `POST /alerts/{id}/suppress`, `POST /alerts/{id}/resolve`.
-  - Topics: consume `alerts.triggered`; produce `alerts.state-changed`; send channel adapters.
+  - Topics: none internally (in-process from rule engine); downstream channel adapters can be added separately.
 - **UI Gateway/API Service**
   - Responsibilities: single REST facade for Angular; aggregates data from state/agg/alert services; enforces authz; caching.
   - APIs (REST/JSON): `/workflows`, `/workflows/{id}/graph`, `/workflows/{id}/tiles?group=...`, `/items/{key}`, `/alerts`, `/rules`, `/auth/me`.

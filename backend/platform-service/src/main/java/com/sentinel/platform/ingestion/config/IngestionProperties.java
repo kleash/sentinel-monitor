@@ -13,6 +13,12 @@ public class IngestionProperties {
     private int maxConcurrentRequests = 32;
 
     @NotBlank
+    private String rawTopic = "events.raw";
+
+    @NotBlank
+    private String rawConsumerGroup = "platform-service";
+
+    @NotBlank
     private String normalizedTopic = "events.normalized";
 
     @NotBlank
@@ -21,11 +27,11 @@ public class IngestionProperties {
     @NotBlank
     private String sourceSystemDefault = "rest";
 
-    @Min(1)
-    private int maxPayloadBytes = 262144;
+    @Min(0)
+    private int maxPayloadBytes = 0;
 
-    @Min(1)
-    private int maxGroupBytes = 65536;
+    @Min(0)
+    private int maxGroupBytes = 0;
 
     @Min(0)
     private int producerLingerMs = 0;
@@ -50,6 +56,22 @@ public class IngestionProperties {
 
     public void setNormalizedTopic(String normalizedTopic) {
         this.normalizedTopic = normalizedTopic;
+    }
+
+    public String getRawTopic() {
+        return rawTopic;
+    }
+
+    public void setRawTopic(String rawTopic) {
+        this.rawTopic = rawTopic;
+    }
+
+    public String getRawConsumerGroup() {
+        return rawConsumerGroup;
+    }
+
+    public void setRawConsumerGroup(String rawConsumerGroup) {
+        this.rawConsumerGroup = rawConsumerGroup;
     }
 
     public String getDlqTopic() {

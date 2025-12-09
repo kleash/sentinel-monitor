@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -16,7 +17,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -54,9 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = {
         "ruleengine.scheduler-enabled=false",
         "logging.level.com.sentinel.platform=DEBUG",
-        "spring.cloud.stream.bindings.rawEventsConsumer-in-0.consumer.auto-startup=false",
-        "spring.kafka.listener.auto-startup=false",
-        "spring.autoconfigure.exclude=org.springframework.cloud.stream.config.BindingServiceConfiguration"
+        "spring.kafka.listener.auto-startup=false"
 })
 class RuleEngineIntegrationTest {
 
@@ -104,9 +102,6 @@ class RuleEngineIntegrationTest {
     @MockBean
     private KafkaTemplate<Object, Object> kafkaTemplate;
 
-    @MockBean
-    private StreamBridge streamBridge;
-
     @org.junit.jupiter.api.BeforeEach
     void stubKafka() {
         lenient().when(kafkaTemplate.send(any(org.springframework.messaging.Message.class)))
@@ -114,12 +109,11 @@ class RuleEngineIntegrationTest {
                     org.springframework.messaging.Message<?> msg = invocation.getArgument(0);
                     String topic = (String) msg.getHeaders().get(KafkaHeaders.TOPIC);
                     Object payload = msg.getPayload();
-                    if (payload instanceof String strPayload) {
-                        if (ruleEngineProperties.getRuleEvaluatedTopic().equals(topic)) {
-                            aggregationService.handleRuleEvaluated(strPayload);
-                        } else if (ruleEngineProperties.getAlertsTriggeredTopic().equals(topic)) {
-                            alertingService.handleAlertTriggered(strPayload);
-                        }
+                    String serialized = payload instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8) : payload.toString();
+                    if (ruleEngineProperties.getRuleEvaluatedTopic().equals(topic)) {
+                        aggregationService.handleRuleEvaluated(serialized);
+                    } else if (ruleEngineProperties.getAlertsTriggeredTopic().equals(topic)) {
+                        alertingService.handleAlertTriggered(serialized);
                     }
                     return java.util.concurrent.CompletableFuture.completedFuture(null);
                 });
@@ -127,8 +121,9 @@ class RuleEngineIntegrationTest {
                 .thenAnswer(invocation -> {
                     String topic = invocation.getArgument(0);
                     Object payload = invocation.getArgument(2);
-                    if (ruleEngineProperties.getSyntheticTopic().equals(topic) && payload instanceof String str) {
-                        ruleEngineService.handleSyntheticMissed(str);
+                    if (ruleEngineProperties.getSyntheticTopic().equals(topic)) {
+                        String serialized = payload instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8) : payload.toString();
+                        ruleEngineService.handleSyntheticMissed(serialized);
                     }
                     return java.util.concurrent.CompletableFuture.completedFuture(null);
                 });

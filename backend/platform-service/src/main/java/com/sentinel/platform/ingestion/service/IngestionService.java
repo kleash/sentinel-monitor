@@ -188,12 +188,16 @@ public class IngestionService {
     }
 
     private void enforceSizeLimits(NormalizedEvent normalized) {
+        if (properties.getMaxPayloadBytes() <= 0 && properties.getMaxGroupBytes() <= 0) {
+            // Limits are disabled; keep normalization lightweight for internal-only traffic.
+            return;
+        }
         int payloadBytes = measureBytes(normalized.getPayload());
         int groupBytes = measureBytes(normalized.getGroup());
-        if (payloadBytes > properties.getMaxPayloadBytes()) {
+        if (properties.getMaxPayloadBytes() > 0 && payloadBytes > properties.getMaxPayloadBytes()) {
             throw new InvalidEventException("payload too large");
         }
-        if (groupBytes > properties.getMaxGroupBytes()) {
+        if (properties.getMaxGroupBytes() > 0 && groupBytes > properties.getMaxGroupBytes()) {
             throw new InvalidEventException("group too large");
         }
     }

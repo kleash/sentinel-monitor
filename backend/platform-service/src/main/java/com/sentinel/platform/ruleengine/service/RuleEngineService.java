@@ -94,6 +94,14 @@ public class RuleEngineService {
     public void handleSyntheticMissed(String payload) {
         try {
             SyntheticMissedEvent missed = objectMapper.readValue(payload, SyntheticMissedEvent.class);
+            handleSyntheticMissed(missed);
+        } catch (Exception ex) {
+            log.error("Failed to process synthetic missed payload={}", payload, ex);
+        }
+    }
+
+    public void handleSyntheticMissed(SyntheticMissedEvent missed) {
+        try {
             log.info("Handling synthetic missed workflowRunId={} toNode={} severity={}", missed.getWorkflowRunId(), missed.getToNode(), missed.getSeverity());
             RunContext runContext = stateRepository.loadRunContext(missed.getWorkflowRunId());
             Map<String, Object> group = parseGroup(runContext.groupJson());
@@ -127,7 +135,7 @@ public class RuleEngineService {
             alert.setTriggeredAt(clock.instant());
             eventPublisher.publishAlertTriggered(alert);
         } catch (Exception ex) {
-            log.error("Failed to process synthetic missed payload={}", payload, ex);
+            log.error("Failed to handle synthetic missed event", ex);
         }
     }
 

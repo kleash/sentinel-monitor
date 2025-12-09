@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,27 +15,23 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
+import com.sentinel.platform.alerting.model.Alert;
 import com.sentinel.platform.alerting.service.AlertingService;
 
 @RestController
 public class AlertController {
 
-    private final JdbcTemplate jdbcTemplate;
     private final AlertingService alertingService;
 
-    public AlertController(JdbcTemplate jdbcTemplate, AlertingService alertingService) {
-        this.jdbcTemplate = jdbcTemplate;
+    public AlertController(AlertingService alertingService) {
         this.alertingService = alertingService;
     }
 
     @GetMapping("/alerts")
     @PreAuthorize("hasRole('viewer') or hasRole('operator') or hasRole('config-admin')")
-    public List<Map<String, Object>> list(@RequestParam(value = "state", required = false) String state,
-                                          @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        if (state == null) {
-            return jdbcTemplate.queryForList("select * from alert order by last_triggered_at desc limit ?", limit);
-        }
-        return jdbcTemplate.queryForList("select * from alert where state = ? order by last_triggered_at desc limit ?", state, limit);
+    public List<Alert> list(@RequestParam(value = "state", required = false) String state,
+                            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return alertingService.list(state, limit);
     }
 
     @PostMapping("/alerts/{id}/ack")
