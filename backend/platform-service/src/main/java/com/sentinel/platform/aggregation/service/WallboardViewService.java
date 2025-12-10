@@ -1,7 +1,5 @@
 package com.sentinel.platform.aggregation.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,11 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +23,8 @@ import com.sentinel.platform.ruleconfig.model.Workflow;
 import com.sentinel.platform.ruleconfig.model.WorkflowVersion;
 import com.sentinel.platform.ruleconfig.repository.WorkflowRepository;
 import com.sentinel.platform.ruleconfig.repository.WorkflowVersionRepository;
+import com.sentinel.platform.shared.group.GroupLabelService;
+import com.sentinel.platform.shared.time.DateRange;
 
 @Service
 public class WallboardViewService {
@@ -36,23 +33,23 @@ public class WallboardViewService {
     private final WorkflowVersionRepository workflowVersionRepository;
     private final WorkflowRepository workflowRepository;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final GroupLabelService groupLabelService;
 
     public WallboardViewService(AggregationQueryService aggregationQueryService,
                                 WorkflowVersionRepository workflowVersionRepository,
                                 WorkflowRepository workflowRepository,
                                 JdbcTemplate jdbcTemplate,
-                                ObjectMapper objectMapper) {
+                                GroupLabelService groupLabelService) {
         this.aggregationQueryService = aggregationQueryService;
         this.workflowVersionRepository = workflowVersionRepository;
         this.workflowRepository = workflowRepository;
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.groupLabelService = groupLabelService;
     }
 
     @Transactional(readOnly = true)
-    public WallboardView buildWallboard(int limit) {
-        List<StageAggregate> aggregates = aggregationQueryService.wallboard(limit).stream()
+    public WallboardView buildWallboard(int limit, DateRange dateRange) {
+        List<StageAggregate> aggregates = aggregationQueryService.wallboard(limit, dateRange).stream()
                 .sorted(Comparator.comparing(StageAggregate::getBucketStart).reversed())
                 .toList();
         if (aggregates.isEmpty()) {
@@ -70,7 +67,7 @@ public class WallboardViewService {
                 .collect(Collectors.toSet());
         Map<Long, Workflow> workflows = workflowRepository.findAllById(workflowIds).stream()
                 .collect(Collectors.toMap(Workflow::getId, wf -> wf));
-        Map<Long, Map<String, String>> labelsByVersion = loadGroupLabels(versionIds);
+        Map<Long, Map<String, String>> labelsByVersion = loadGroupLabels(versionIds, dateRange);
 
         Map<Long, Map<String, GroupAccumulator>> grouped = new LinkedHashMap<>();
         Instant latestBucket = aggregates.get(0).getBucketStart();
@@ -113,67 +110,32 @@ public class WallboardViewService {
         return new WallboardView(workflowTiles, latestBucket);
     }
 
-    private Map<Long, Map<String, String>> loadGroupLabels(Set<Long> workflowVersionIds) {
+    private Map<Long, Map<String, String>> loadGroupLabels(Set<Long> workflowVersionIds, DateRange dateRange) {
         if (workflowVersionIds.isEmpty()) {
             return Map.of();
         }
         String placeholders = workflowVersionIds.stream().map(id -> "?").collect(Collectors.joining(","));
         String sql = "select workflow_version_id, group_dims from workflow_run " +
                 "where workflow_version_id in (" + placeholders + ") and group_dims is not null";
-        Object[] args = workflowVersionIds.toArray();
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, args);
-        Map<Long, Map<String, String>> labels = new HashMap<>();
+        List<Object> args = new ArrayList<>(workflowVersionIds);
+        if (dateRange != null && !dateRange.isAllDays()) {
+            sql += " and updated_at between ? and ?";
+            args.add(java.sql.Timestamp.from(dateRange.start()));
+            args.add(java.sql.Timestamp.from(dateRange.end()));
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, args.toArray());
+        Map<Long, Map<String, String>> labels = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             Long versionId = ((Number) row.get("workflow_version_id")).longValue();
-            Map<String, Object> group = parseGroup((String) row.get("group_dims"));
-            String hash = hashGroup(group);
+            Map<String, Object> group = groupLabelService.parseGroupJson((String) row.get("group_dims"));
+            String hash = groupLabelService.hashGroup(group);
             if (hash == null) {
                 continue;
             }
             labels.computeIfAbsent(versionId, id -> new LinkedHashMap<>())
-                    .putIfAbsent(hash, formatGroupLabel(group));
+                    .putIfAbsent(hash, groupLabelService.formatGroupLabel(group));
         }
         return labels;
-    }
-
-    private Map<String, Object> parseGroup(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
-        } catch (Exception ex) {
-            return Map.of();
-        }
-    }
-
-    private String hashGroup(Map<String, Object> group) {
-        if (group == null || group.isEmpty()) {
-            return "default";
-        }
-        try {
-            Map<String, Object> sorted = new TreeMap<>(group);
-            String serialized = objectMapper.writeValueAsString(sorted);
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(serialized.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 8 && i < hash.length; i++) {
-                sb.append(String.format("%02x", hash[i]));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return "default";
-        }
-    }
-
-    private String formatGroupLabel(Map<String, Object> group) {
-        if (group == null || group.isEmpty()) {
-            return "default";
-        }
-        return group.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> entry.getKey() + "=" + String.valueOf(entry.getValue()))
-                .collect(Collectors.joining(" / "));
     }
 
     private int severityRank(String severity) {

@@ -181,7 +181,7 @@ class RuleEngineIntegrationTest {
         String itemResponse = mockMvc.perform(get("/items/order-1").contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(itemResponse).contains("expectations").contains("events");
+        assertThat(itemResponse).contains("pendingExpectations").contains("events");
 
         Long alertId = ((Number) alertRow.get("id")).longValue();
         mockMvc.perform(post("/alerts/" + alertId + "/ack")

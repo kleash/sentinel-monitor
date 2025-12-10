@@ -10,7 +10,7 @@ This guide onboards production support and configuration teams to start, seed, c
 ## Scripts (root `scripts/`)
 | Script | Purpose | Notes |
 | --- | --- | --- |
-| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (mock-friendly). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Automation flags: `SKIP_FRONTEND=true` or `SKIP_BACKEND=true`; override frontend command via `FRONTEND_START_CMD` (used by the regression suite to run the Angular server separately). Logs under `logs/`; PIDs under `scripts/.pids/`. |
+| `./scripts/start.sh` | Boots infra (Docker), backend jar, and Angular dev server (live backend by default). | Env: `BACKEND_PORT` (default `8080`), `FRONTEND_PORT` (default `4300`), `DB_URL`/`DB_USER`/`DB_PASSWORD` (default to local MariaDB), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:29092`). Automation flags: `SKIP_FRONTEND=true` or `SKIP_BACKEND=true`; override frontend command via `FRONTEND_START_CMD` (regression sets this to `npm run start:demo`). Logs under `logs/`; PIDs under `scripts/.pids/`. |
 | `./scripts/demo.sh` | One-command demo: (optional) reset infra, build backend, start stack with live backend UI, seed trade/equity data. | Env: `RESET_STATE` (default `true`, runs `docker compose down -v`), `BACKEND_PORT`, `FRONTEND_PORT`, `SECURITY_DISABLE_AUTH` (default `true` for local demos), `SKIP_BUILD`, `API_URL`, `FRONTEND_START_CMD`. Proxies UI via `frontend/proxy.conf.js`. |
 | `./scripts/stop.sh` | Stops backend/frontend and pauses Docker containers. | Keeps volumes. |
 | `./scripts/teardown.sh` | Full stop + `docker compose down -v` for infra. | Deletes infra volumes. |
@@ -20,7 +20,7 @@ This guide onboards production support and configuration teams to start, seed, c
 ```bash
 ./scripts/demo.sh   # recommended for a clean demo with live backend data
 # or
-./scripts/start.sh  # starts services; use FRONTEND_START_CMD="npm run start:demo -- --port 4300" for live API
+./scripts/start.sh  # starts services; default frontend is demo/proxied to the live API
 # wait for health: backend http://localhost:8080/actuator/health, frontend http://localhost:4300
 ```
 _Tested_: start/stop/seed executed locally with confluent Kafka + MariaDB; backend/health OK; seed completed without errors.
@@ -96,6 +96,6 @@ Seed contents:
 
 ## Tests (developer + regression)
 - Frontend unit tests: `cd frontend && npm test`.
-- Regression/e2e: `cd tests/regression && npm test` (global setup starts infra/backend via `scripts/start.sh` with `SKIP_FRONTEND=true`, seeds demo data, launches the Angular mock server for Playwright). Outputs screenshots, videos, and GIFs under `tests/regression/test-results/`.
+- Regression/e2e: `cd tests/regression && npm test` (global setup installs deps, builds backend if missing, starts infra + backend + demo-mode Angular via `scripts/start.sh`, seeds demo data, then runs Playwright). Outputs screenshots, videos, and GIFs under `tests/regression/test-results/`.
 - Regression guide: [docs/regression-playwright.md](./regression-playwright.md).
 - Coverage mode remains available: `cd tests/regression && npm run test:coverage` (nyc-wrapped Playwright run).

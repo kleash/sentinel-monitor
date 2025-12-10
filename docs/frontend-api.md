@@ -36,11 +36,13 @@ All APIs secured via OIDC JWT with roles `viewer`, `operator`, `config-admin`. B
 
 ## Read Models
 - `GET /items/{correlationKey}?workflowVersionId=` (roles: `viewer`/`operator`/`config-admin`)
-  - Returns latest workflow run for the correlation key: status, group, `events` (node, eventTime, receivedAt, lateness/order flags), `expectations`, `alerts`.
-- `GET /workflows/{id}/aggregates?groupHash=&limit=50` (roles: `viewer`/`operator`/`config-admin`)
-  - Rows from `stage_aggregate` with in-flight/completed/late/failed per bucket. Use `groupHash` to scope to a group.
-- `GET /wallboard?limit=200` (roles: `viewer`/`operator`/`config-admin`)
-  - Wallboard view composed from the latest aggregates: `{"updatedAt": ISO, "workflows":[{"workflowId","workflowKey","name","status","groups":[{"label","groupHash","status","inFlight","late","failed","countdowns":[]}]}]}`.
+  - Returns latest workflow run for the correlation key: status, group hash/label, `events` (node, eventTime, receivedAt, lateness/order flags, derived duration), `pendingExpectations`, `alerts`, `startedAt`/`updatedAt`, `currentStage`, and workflow metadata.
+- `GET /workflows/{id}/aggregates?groupHash=&limit=50&date=YYYY-MM-DD&allDays=` (roles: `viewer`/`operator`/`config-admin`)
+  - Rows from `stage_aggregate` with in-flight/completed/late/failed per bucket. Use `groupHash` to scope to a group. `date` defaults to `today`; set `allDays=true` to bypass the day filter.
+- `GET /wallboard?limit=200&date=YYYY-MM-DD&allDays=` (roles: `viewer`/`operator`/`config-admin`)
+  - Wallboard view composed from the latest aggregates filtered to the chosen day by default: `{"updatedAt": ISO, "workflows":[{"workflowId","workflowKey","name","status","groups":[{"label","groupHash","status","inFlight","late","failed","countdowns":[]}]}]}`.
+- `GET /workflows/{key}/correlations?groupHash=&stage=&page=&size=&date=&allDays=` (roles: `viewer`/`operator`/`config-admin`)
+  - Paginates workflow instances contributing to wallboard/workflow metrics. Items include `correlationId`, `workflowVersionId`, `status`, `currentStage`, `startedAt`, `updatedAt`, `lastEventAt`, `groupHash`/`groupLabel`, and late/order flags.
   - Group labels are derived from stored workflow run group dimensions (hash → key/value label), and statuses roll up worst-late/failed per group.
 
 ## Alerts
@@ -60,6 +62,12 @@ All APIs secured via OIDC JWT with roles `viewer`, `operator`, `config-admin`. B
 - Workflow routing can be explicit via `workflowKey`/`workflowKeys` on events; otherwise routes by `eventType`.
 - Group dimensions are stored as JSON; hash provided in aggregates for grouping.
 - All times are UTC; display local with UTC toggle.
+
+## Wallboard & Workflow UI Notes
+- Date filter defaults to `today` across wallboard and workflow pages; users can switch to a specific day (`YYYY-MM-DD`) or `allDays`. The active selection is shared between pages and sent to wallboard/aggregate/correlation APIs.
+- Wallboard group tiles and workflow graphs expose a Correlation ID (Trade ID) drill-down showing paged workflow instances with stage/status and links to the lifecycle view.
+- Lifecycle view (Item page) shows stage transitions with timestamps, derived durations, current stage, group hash/label, pending expectations, and related alerts.
+- Navigation: Wallboard → Workflow (via group) → Correlation list → Lifecycle; correlations can also be opened directly from wallboard headers or workflow stage tiles/graph nodes.
 
 ## Usage Notes
 - Send UTC timestamps; backend stores in UTC.

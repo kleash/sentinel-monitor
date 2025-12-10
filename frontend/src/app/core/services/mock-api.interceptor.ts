@@ -27,6 +27,14 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   }
   if (req.method === 'GET' && path.startsWith('/workflows/')) {
     const key = path.split('/')[2];
+    if (path.includes('/correlations')) {
+      const url = new URL(req.url, 'http://localhost');
+      const groupHash = url.searchParams.get('groupHash') ?? undefined;
+      const stage = url.searchParams.get('stage') ?? undefined;
+      const page = Number(url.searchParams.get('page') ?? '0');
+      const size = Number(url.searchParams.get('size') ?? '20');
+      return respond(mock.getCorrelations(key, { groupHash, stage, page, size }));
+    }
     const workflow = mock.getWorkflow(key);
     if (!workflow) {
       return notFound();

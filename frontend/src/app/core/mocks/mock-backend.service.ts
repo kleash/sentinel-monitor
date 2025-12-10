@@ -11,7 +11,9 @@ import {
   WallboardView,
   WallboardWorkflowTile,
   WorkflowGraph,
-  WorkflowSummary
+  WorkflowSummary,
+  WorkflowInstance,
+  WorkflowInstancePage
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -51,6 +53,42 @@ export class MockBackendService {
 
   getItem(correlationKey: string): ItemTimeline | undefined {
     return this.itemTimelines.get(correlationKey);
+  }
+
+  getCorrelations(
+    workflowKey: string,
+    opts?: { groupHash?: string; stage?: string; page?: number; size?: number }
+  ): WorkflowInstancePage {
+    const size = opts?.size ?? 20;
+    const page = opts?.page ?? 0;
+    const start = page * size;
+    const items = Array.from(this.itemTimelines.values())
+      .filter((item) => item.workflowId === workflowKey || item.workflowKey === workflowKey)
+      .filter((item) => (!opts?.groupHash ? true : item.groupHash === opts.groupHash))
+      .filter((item) => (!opts?.stage ? true : item.currentStage === opts.stage));
+    const instances: WorkflowInstance[] = items.map((item) => ({
+      correlationId: item.correlationKey,
+      workflowVersionId: item.workflowVersionId,
+      workflowId: item.workflowId,
+      workflowKey: item.workflowId,
+      workflowName: this.getWorkflow(item.workflowId)?.name ?? item.workflowId,
+      status: item.status,
+      currentStage: item.currentStage ?? item.events[item.events.length - 1]?.node,
+      startedAt: item.startedAt ?? item.events[0]?.eventTime,
+      updatedAt: item.updatedAt ?? item.events[item.events.length - 1]?.receivedAt,
+      lastEventAt: item.events[item.events.length - 1]?.receivedAt,
+      groupHash: item.groupHash,
+      groupLabel: item.groupLabel,
+      late: item.events.some((ev) => ev.late),
+      orderViolation: item.events.some((ev) => ev.orderViolation)
+    }));
+    const pageItems = instances.slice(start, start + size);
+    return {
+      items: pageItems,
+      page,
+      size,
+      hasMore: start + size < instances.length
+    };
   }
 
   getAlerts(state?: string): Alert[] {
@@ -148,11 +186,17 @@ export class MockBackendService {
       workflowId: workflow.key,
       workflowVersionId: `${workflow.id}-v1`,
       correlationKey: itemKey,
+      groupHash,
+      groupLabel,
       status: 'green',
       events: [],
       pendingExpectations: [],
       group: payload.group ?? { book: 'EQD', region: 'NY' }
     };
+    timeline.groupHash = groupHash;
+    timeline.groupLabel = groupLabel;
+    timeline.startedAt = timeline.startedAt ?? eventTime;
+    timeline.updatedAt = receivedAt;
     timeline.events = [
       ...timeline.events,
       {
@@ -163,6 +207,7 @@ export class MockBackendService {
         orderViolation: false
       }
     ];
+    timeline.currentStage = payload.eventType;
     this.itemTimelines.set(itemKey, timeline);
     this.bumpWallboard(workflow, groupHash, groupLabel, payload.eventType);
     this.bumpAggregates(workflow, groupHash, payload.eventType);
@@ -401,8 +446,12 @@ export class MockBackendService {
       workflowId: 'trade-lifecycle',
       workflowVersionId: 'wf-trade-v2',
       correlationKey,
+      groupHash: 'eqd-ny',
+      groupLabel: 'EQD / NY',
       status: 'amber',
       group: { book: 'EQD', region: 'NY' },
+      startedAt: this.offset(-12),
+      updatedAt: this.offset(-10),
       events: [
         {
           node: 'ingest',
@@ -419,6 +468,7 @@ export class MockBackendService {
           orderViolation: false
         }
       ],
+      currentStage: 'sys2-verify',
       pendingExpectations: [
         { from: 'sys2-verify', to: 'sys3-ack', dueAt: this.offset(2), severity: 'red', remainingSec: 120 }
       ],

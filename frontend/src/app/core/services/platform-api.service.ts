@@ -8,6 +8,7 @@ import {
   ItemTimeline,
   StageAggregate,
   WallboardView,
+  WorkflowInstancePage,
   WorkflowSummary
 } from '../models';
 import { environment } from '../../../environments/environment';
@@ -20,8 +21,9 @@ export class PlatformApiService {
 
   constructor(private readonly http: HttpClient) {}
 
-  getWallboard(): Observable<WallboardView> {
-    return this.http.get<WallboardView>(`${this.baseUrl}/wallboard`).pipe(
+  getWallboard(params?: Record<string, string | number | boolean | undefined>): Observable<WallboardView> {
+    const query = this.buildQuery(params);
+    return this.http.get<WallboardView>(`${this.baseUrl}/wallboard${query}`).pipe(
       tap((wallboard) => console.debug('[api] wallboard received', wallboard))
     );
   }
@@ -38,13 +40,13 @@ export class PlatformApiService {
     );
   }
 
-  getAggregates(workflowId: string, groupHash?: string, limit = 50): Observable<StageAggregate[]> {
-    const params = new URLSearchParams();
-    if (groupHash) {
-      params.set('groupHash', groupHash);
-    }
-    params.set('limit', `${limit}`);
-    const query = params.toString() ? `?${params.toString()}` : '';
+  getAggregates(
+    workflowId: string,
+    groupHash?: string,
+    limit = 50,
+    params?: Record<string, string | number | boolean | undefined>
+  ): Observable<StageAggregate[]> {
+    const query = this.buildQuery({ groupHash, limit, ...params });
     return this.http
       .get<StageAggregate[]>(`${this.baseUrl}/workflows/${workflowId}/aggregates${query}`)
       .pipe(tap((rows) => console.debug('[api] aggregates', workflowId, rows.length)));
@@ -54,16 +56,21 @@ export class PlatformApiService {
     const suffix = workflowVersionId ? `?workflowVersionId=${workflowVersionId}` : '';
     return this.http
       .get<ItemTimeline>(`${this.baseUrl}/items/${correlationKey}${suffix}`)
-      .pipe(tap((item) => console.debug('[api] item', correlationKey, item.status)));
+      .pipe(map((item) => this.enrichTimeline(item)), tap((item) => console.debug('[api] item', correlationKey, item.status)));
+  }
+
+  getCorrelations(
+    workflowKey: string,
+    params?: Record<string, string | number | boolean | undefined>
+  ): Observable<WorkflowInstancePage> {
+    const query = this.buildQuery(params);
+    return this.http
+      .get<WorkflowInstancePage>(`${this.baseUrl}/workflows/${workflowKey}/correlations${query}`)
+      .pipe(tap((page) => console.debug('[api] correlations', workflowKey, page.items.length)));
   }
 
   getAlerts(state?: string, limit = 100): Observable<Alert[]> {
-    const params = new URLSearchParams();
-    if (state) {
-      params.set('state', state);
-    }
-    params.set('limit', `${limit}`);
-    const query = params.toString() ? `?${params.toString()}` : '';
+    const query = this.buildQuery({ state, limit });
     return this.http
       .get<Alert[]>(`${this.baseUrl}/alerts${query}`)
       .pipe(
@@ -111,6 +118,24 @@ export class PlatformApiService {
       .pipe(tap((event) => console.debug('[api] ingest', event)));
   }
 
+  private enrichTimeline(raw: any): ItemTimeline {
+    if (!raw) {
+      return raw;
+    }
+    const events = (raw.events ?? []).map((event: any, index: number, all: any[]) => {
+      const next = all[index + 1];
+      const nextTime = next?.eventTime ?? raw.updatedAt;
+      const durationMs =
+        event.eventTime && nextTime ? new Date(nextTime).getTime() - new Date(event.eventTime).getTime() : undefined;
+      return { ...event, durationMs };
+    });
+    return {
+      ...raw,
+      events,
+      pendingExpectations: raw.pendingExpectations ?? raw.expectations ?? []
+    };
+  }
+
   private normalizeAlert(alert: any): Alert {
     const correlationKey = alert.correlationKey ?? alert.correlation_key;
     const nodeKey = alert.nodeKey ?? alert.node_key;
@@ -128,5 +153,20 @@ export class PlatformApiService {
       title: alert.title ?? nodeKey ?? 'Alert',
       reason: alert.reason ?? alert.state ?? ''
     };
+  }
+
+  private buildQuery(params?: Record<string, string | number | boolean | undefined>) {
+    if (!params) {
+      return '';
+    }
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') {
+        return;
+      }
+      search.set(key, String(value));
+    });
+    const query = search.toString();
+    return query ? `?${query}` : '';
   }
 }

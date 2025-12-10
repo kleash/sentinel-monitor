@@ -13,7 +13,7 @@ DB_URL="${DB_URL:-jdbc:mariadb://localhost:3306/sentinel}"
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-sentinel}"
 KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:29092}"
-FRONTEND_START_CMD="${FRONTEND_START_CMD:-npm run start:mock -- --port ${FRONTEND_PORT}}"
+FRONTEND_START_CMD="${FRONTEND_START_CMD:-npm run start:demo -- --host 0.0.0.0 --port ${FRONTEND_PORT}}"
 
 mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
@@ -75,7 +75,7 @@ start_frontend() {
   fi
   log "Installing frontend deps (if needed) and starting Angular dev server on port ${FRONTEND_PORT}..."
   (cd "${ROOT_DIR}/frontend" && npm install >/dev/null)
-  nohup bash -c "cd \"${ROOT_DIR}/frontend\" && ${FRONTEND_START_CMD}" \
+  nohup bash -c "cd \"${ROOT_DIR}/frontend\" && API_PROXY_TARGET=\"http://localhost:${BACKEND_PORT}\" ${FRONTEND_START_CMD}" \
     > "${LOG_DIR}/frontend.log" 2>&1 &
   echo $! > "${PID_DIR}/frontend.pid"
 }

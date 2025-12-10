@@ -1,5 +1,11 @@
 export type Severity = 'green' | 'amber' | 'red';
 export type AlertState = 'open' | 'ack' | 'suppressed' | 'resolved';
+export type DateFilterMode = 'today' | 'day' | 'all';
+
+export interface DateFilterState {
+  mode: DateFilterMode;
+  day?: string;
+}
 
 export interface WorkflowNode {
   key: string;
@@ -96,6 +102,7 @@ export interface ExpectationView {
   to: string;
   dueAt: string;
   severity: Severity;
+  status?: string;
   remainingSec?: number;
 }
 
@@ -106,13 +113,21 @@ export interface ItemEvent {
   late?: boolean;
   orderViolation?: boolean;
   payloadExcerpt?: string;
+  durationMs?: number;
 }
 
 export interface ItemTimeline {
   workflowId: string;
+  workflowKey?: string;
+  workflowName?: string;
   workflowVersionId?: string;
   correlationKey: string;
+  currentStage?: string;
   group?: Record<string, string>;
+  groupHash?: string;
+  groupLabel?: string;
+  startedAt?: string;
+  updatedAt?: string;
   status: Severity;
   events: ItemEvent[];
   pendingExpectations: ExpectationView[];
@@ -146,4 +161,28 @@ export interface AckRequest {
 export interface WallboardView {
   workflows: WallboardWorkflowTile[];
   updatedAt: string;
+}
+
+export interface WorkflowInstance {
+  correlationId: string;
+  workflowVersionId?: string;
+  workflowId?: string;
+  workflowKey?: string;
+  workflowName?: string;
+  status: Severity;
+  currentStage?: string;
+  startedAt?: string;
+  updatedAt?: string;
+  lastEventAt?: string;
+  groupHash?: string;
+  groupLabel?: string;
+  late?: boolean;
+  orderViolation?: boolean;
+}
+
+export interface WorkflowInstancePage {
+  items: WorkflowInstance[];
+  page: number;
+  size: number;
+  hasMore: boolean;
 }

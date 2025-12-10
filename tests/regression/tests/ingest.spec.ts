@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { captureStep } from '../utils/artifacts';
 
 test('ingest simulator drives live wallboard + item updates', async ({ page }) => {
-  const correlationKey = 'TR123';
+  const correlationKey = `TR-${Date.now()}`;
 
   await page.goto('/wallboard');
   const wallboardCard = page.locator('.workflow-card', { hasText: 'Trade Lifecycle' });

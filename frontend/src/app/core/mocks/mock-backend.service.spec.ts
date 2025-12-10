@@ -27,4 +27,10 @@ describe('MockBackendService', () => {
     expect(updated?.state).toEqual('ack');
     expect(updated?.reason).toEqual('test');
   });
+
+  it('returns correlation instances for a workflow', () => {
+    const page = service.getCorrelations('trade-lifecycle', { size: 5 });
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items[0].correlationId).toBeDefined();
+  });
 });

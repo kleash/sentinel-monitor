@@ -10,6 +10,7 @@ export class LiveUpdateService implements OnDestroy {
   private readonly wallboardSignal = signal<WallboardView | null>(null);
   private readonly alertsSignal = signal<Alert[]>([]);
   private readonly subscriptions: Subscription[] = [];
+  private wallboardParams: Record<string, string | number | boolean | undefined> = {};
   private started = false;
 
   constructor(private readonly api: PlatformApiService) {}
@@ -31,7 +32,7 @@ export class LiveUpdateService implements OnDestroy {
     this.refreshAlerts();
     this.subscriptions.push(
       interval(environment.wallboardAutoRefreshMs)
-        .pipe(switchMap(() => this.api.getWallboard()))
+        .pipe(switchMap(() => this.api.getWallboard(this.wallboardParams)))
         .subscribe((data) => this.wallboardSignal.set(data)),
       interval(environment.pollIntervalMs)
         .pipe(switchMap(() => this.api.getAlerts('open')))
@@ -39,8 +40,15 @@ export class LiveUpdateService implements OnDestroy {
     );
   }
 
+  setWallboardParams(params: Record<string, string | number | boolean | undefined>) {
+    this.wallboardParams = params ?? {};
+    if (this.started) {
+      this.refreshWallboard();
+    }
+  }
+
   refreshWallboard() {
-    this.api.getWallboard().subscribe((data) => this.wallboardSignal.set(data));
+    this.api.getWallboard(this.wallboardParams).subscribe((data) => this.wallboardSignal.set(data));
   }
 
   refreshAlerts() {

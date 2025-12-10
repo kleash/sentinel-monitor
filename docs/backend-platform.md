@@ -74,6 +74,9 @@
 - Main packages: `ruleengine.web`, `aggregation.web`, `alerting.web`.
 - High-level call flow: controllers query `workflow_run`, `event_occurrence`, `expectation`, `alert`, and `stage_aggregate` directly via `JdbcTemplate` and return assembled maps/lists.
 - Key database tables: `workflow_run`, `event_occurrence`, `expectation`, `alert`, `stage_aggregate`.
+- Date-aware querying: `DateRangeParser` defaults to today for wallboard/aggregate endpoints; `date=YYYY-MM-DD` or `allDays=true` widens the window. Wallboard group labels now use the same date bounds to avoid stale group hashes.
+- Correlation drill-down: `WorkflowInstanceController` (`/workflows/{key}/correlations`) paginates workflow runs contributing to metrics with stage/status, timestamps, and group hash/label derived from `workflow_run.group_dims`.
+- Timeline payloads now carry `currentStage`, `startedAt`/`updatedAt`, group hash/label, and pending expectations/alerts with human-friendly field names for the UI lifecycle view.
 
 ## 4. Package Reference
 

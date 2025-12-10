@@ -135,12 +135,24 @@ export class IngestPageComponent {
     try {
       const payload = {
         ...this.form.value,
+        eventTime: this.form.value.eventTime
+          ? new Date(this.form.value.eventTime).toISOString()
+          : undefined,
         group: this.form.value.group ? JSON.parse(this.form.value.group) : undefined,
         payload: this.form.value.payload ? JSON.parse(this.form.value.payload) : undefined
       };
-      this.api.ingest(payload as any).subscribe(() => {
-        this.message = 'Event sent for ingestion';
-        this.cdr.markForCheck();
+      this.message = 'Sending event...';
+      this.cdr.markForCheck();
+      this.api.ingest(payload as any).subscribe({
+        next: () => {
+          this.message = 'Event sent for ingestion';
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          console.error('ingest failed', err);
+          this.message = 'Failed to send event';
+          this.cdr.markForCheck();
+        }
       });
     } catch (err) {
       this.message = 'Invalid JSON payload';

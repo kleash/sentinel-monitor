@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  EventEmitter,
   Input,
   OnChanges,
+  Output,
   SimpleChanges
 } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
@@ -45,8 +47,14 @@ interface PositionedNode {
           >
             SLA {{ edge.maxLatencySec }}s
           </text>
+          <title>{{ edge.from }} → {{ edge.to }}</title>
         </g>
-        <g *ngFor="let node of positionedNodes" class="node-group">
+        <g
+          *ngFor="let node of positionedNodes"
+          class="node-group"
+          (click)="selectNode.emit(node.node.key)"
+          tabindex="0"
+        >
           <rect
             class="node"
             [attr.class]="node.status"
@@ -57,8 +65,28 @@ interface PositionedNode {
             rx="14"
             ry="14"
           ></rect>
+          <rect
+            class="node-glow"
+            [attr.class]="node.status"
+            [attr.x]="node.x - nodeRadius"
+            [attr.y]="node.y - nodeRadius"
+            [attr.width]="nodeRadius * 2"
+            [attr.height]="nodeRadius * 2"
+            rx="18"
+            ry="18"
+          ></rect>
           <text [attr.x]="node.x" [attr.y]="node.y" class="node-label">{{ node.node.key }}</text>
           <text [attr.x]="node.x" [attr.y]="node.y + 16" class="node-type">{{ node.node.eventType }}</text>
+          <text *ngIf="node.node.start" [attr.x]="node.x" [attr.y]="node.y - nodeRadius - 6" class="badge">Start</text>
+          <text
+            *ngIf="node.node.terminal"
+            [attr.x]="node.x"
+            [attr.y]="node.y + nodeRadius + 16"
+            class="badge terminal"
+          >
+            Terminal
+          </text>
+          <title>{{ node.node.eventType }}</title>
         </g>
       </svg>
       <div class="legend" *ngIf="positionedNodes.length">
@@ -74,32 +102,50 @@ interface PositionedNode {
         display: block;
       }
       .graph {
-        background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 25%),
-          radial-gradient(circle at 80% 40%, rgba(255, 255, 255, 0.06), transparent 20%),
-          linear-gradient(135deg, rgba(36, 43, 73, 0.8), rgba(10, 10, 20, 0.9));
+        background: radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.12), transparent 22%),
+          radial-gradient(circle at 80% 30%, rgba(255, 193, 7, 0.1), transparent 18%),
+          linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(6, 8, 15, 0.98));
         border: 1px solid var(--border-strong);
         border-radius: 1rem;
         padding: 0.5rem;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px rgba(0, 0, 0, 0.35);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 14px 30px rgba(0, 0, 0, 0.35);
         position: relative;
+        overflow: hidden;
       }
       svg {
         width: 100%;
-        height: 360px;
+        height: 420px;
       }
       .node {
-        fill: rgba(255, 255, 255, 0.06);
+        fill: rgba(255, 255, 255, 0.04);
         stroke: var(--border-strong);
-        stroke-width: 2;
+        stroke-width: 1.5;
         filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
       }
       .node.green {
         stroke: var(--green-strong);
+        fill: rgba(0, 200, 83, 0.12);
       }
       .node.amber {
         stroke: var(--amber-strong);
+        fill: rgba(255, 193, 7, 0.1);
       }
       .node.red {
+        stroke: var(--red-strong);
+        fill: rgba(255, 82, 82, 0.12);
+      }
+      .node-glow {
+        fill: none;
+        stroke-width: 10;
+        opacity: 0.12;
+      }
+      .node-glow.green {
+        stroke: var(--green-strong);
+      }
+      .node-glow.amber {
+        stroke: var(--amber-strong);
+      }
+      .node-glow.red {
         stroke: var(--red-strong);
       }
       .node-label {
@@ -114,8 +160,8 @@ interface PositionedNode {
         text-anchor: middle;
       }
       line {
-        stroke: var(--border-strong);
-        stroke-width: 2.2;
+        stroke: rgba(255, 255, 255, 0.4);
+        stroke-width: 2.4;
       }
       line.red {
         stroke: var(--red-strong);
@@ -133,6 +179,22 @@ interface PositionedNode {
         fill: var(--text-weak);
         font-size: 0.65rem;
         text-anchor: middle;
+        background: rgba(0, 0, 0, 0.5);
+      }
+      .badge {
+        font-size: 0.65rem;
+        fill: var(--text-weak);
+        text-anchor: middle;
+        letter-spacing: 0.04em;
+      }
+      .badge.terminal {
+        fill: var(--amber-strong);
+      }
+      .node-group {
+        cursor: pointer;
+      }
+      .node-group:focus-visible .node {
+        stroke-width: 3;
       }
       .legend {
         position: absolute;
@@ -148,6 +210,7 @@ interface PositionedNode {
 export class GraphCanvasComponent implements OnChanges {
   @Input({ required: true }) graph!: WorkflowGraph;
   @Input() statusByNode?: Record<string, Severity>;
+  @Output() selectNode = new EventEmitter<string>();
 
   positionedNodes: PositionedNode[] = [];
   viewWidth = 1200;
@@ -208,6 +271,9 @@ export class GraphCanvasComponent implements OnChanges {
       columns[lvl] = columns[lvl] ?? [];
       columns[lvl].push(node);
     });
+    const maxPerColumn = Math.max(...Object.values(columns).map((arr) => arr.length));
+    this.viewWidth = Math.max(960, (maxLevel + 1) * 220);
+    this.viewHeight = Math.max(340, maxPerColumn * 140);
     const horizontalGap = this.viewWidth / (maxLevel + 2);
     const nodes: PositionedNode[] = [];
     Object.entries(columns).forEach(([levelStr, nodesInLevel]) => {

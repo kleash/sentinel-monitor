@@ -13,24 +13,60 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
     <section class="timeline" *ngIf="timeline">
       <header>
         <div>
-          <div class="label">Correlation</div>
+          <div class="label">Correlation ID</div>
           <div class="value">{{ timeline.correlationKey }}</div>
+          <div class="sub">Workflow: {{ timeline.workflowName || timeline.workflowId }}</div>
         </div>
-        <app-status-pill [label]="timeline.workflowId" [severity]="timeline.status"></app-status-pill>
+        <app-status-pill
+          [label]="timeline.currentStage || timeline.status"
+          [severity]="timeline.status"
+          [meta]="timeline.groupLabel"
+        ></app-status-pill>
       </header>
-      <ol>
-        <li *ngFor="let event of timeline.events">
-          <div class="event-head">
-            <span class="node">{{ event.node }}</span>
-            <span class="time">{{ event.eventTime | date: 'medium': timezone() }}</span>
-          </div>
-          <div class="event-meta">
-            <span>received {{ event.receivedAt | date: 'mediumTime': timezone() }}</span>
-            <span *ngIf="event.late" class="late">Late</span>
-            <span *ngIf="event.orderViolation" class="late">Order violation</span>
-          </div>
-        </li>
-      </ol>
+      <div class="summary">
+        <div>
+          <div class="summary-label">Current Stage</div>
+          <div class="summary-value">{{ timeline.currentStage || '—' }}</div>
+        </div>
+        <div>
+          <div class="summary-label">Group</div>
+          <div class="summary-value">{{ timeline.groupLabel || 'default' }}</div>
+        </div>
+        <div>
+          <div class="summary-label">Started</div>
+          <div class="summary-value">{{ timeline.startedAt | date: 'short': timezone() }}</div>
+        </div>
+        <div>
+          <div class="summary-label">Updated</div>
+          <div class="summary-value">{{ timeline.updatedAt | date: 'short': timezone() }}</div>
+        </div>
+      </div>
+
+      <section class="events" *ngIf="timeline.events?.length">
+        <div class="events-head">Lifecycle</div>
+        <div class="event-row head">
+          <span>Stage</span>
+          <span>Event Time</span>
+          <span>Received</span>
+          <span>Duration</span>
+          <span>Flags</span>
+        </div>
+        <div
+          class="event-row"
+          *ngFor="let event of timeline.events"
+          [class.active]="event.node === timeline.currentStage"
+        >
+          <span class="node">{{ event.node }}</span>
+          <span>{{ event.eventTime | date: 'short': timezone() }}</span>
+          <span>{{ event.receivedAt | date: 'shortTime': timezone() }}</span>
+          <span>{{ formatDuration(event.durationMs) }}</span>
+          <span class="flags">
+            <span *ngIf="event.late" class="late pill">Late</span>
+            <span *ngIf="event.orderViolation" class="late pill">Order</span>
+          </span>
+        </div>
+      </section>
+
       <section class="expectations" *ngIf="timeline.pendingExpectations?.length">
         <h4>Pending Expectations</h4>
         <div class="expectation" *ngFor="let exp of timeline.pendingExpectations">
@@ -75,32 +111,68 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
         font-size: 1.2rem;
         font-weight: 700;
       }
-      ol {
-        list-style: none;
-        padding: 0;
-        margin: 0;
+      .sub {
+        color: var(--text-weak);
+        font-size: 0.9rem;
+      }
+      .summary {
         display: grid;
-        gap: 0.6rem;
-      }
-      li {
-        border-left: 2px solid var(--border-strong);
-        padding-left: 0.75rem;
-      }
-      .event-head {
-        display: flex;
-        align-items: center;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 0.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .summary-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-weak);
+      }
+      .summary-value {
         font-weight: 700;
       }
-      .event-meta {
+      .events {
+        margin-top: 0.5rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 0.75rem;
+        overflow: hidden;
+      }
+      .events-head {
+        padding: 0.5rem 0.6rem;
+        font-weight: 700;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .event-row {
+        display: grid;
+        grid-template-columns: 1.2fr repeat(3, minmax(0, 1fr)) minmax(0, 1fr);
+        padding: 0.45rem 0.6rem;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      .event-row:nth-child(odd) {
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .event-row.head {
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         font-size: 0.85rem;
-        color: var(--text-weak);
+        background: rgba(255, 193, 7, 0.08);
+      }
+      .event-row.active {
+        border-left: 3px solid var(--amber-strong);
+        background: rgba(255, 193, 7, 0.06);
+      }
+      .flags {
         display: flex;
-        gap: 1rem;
+        gap: 0.25rem;
+      }
+      .pill {
+        padding: 0.15rem 0.4rem;
+        border: 1px solid var(--amber-strong);
+        border-radius: 999px;
+        font-size: 0.8rem;
       }
       .late {
         color: var(--red-strong);
-        font-weight: 700;
       }
       .expectations,
       .alerts {
@@ -131,5 +203,22 @@ export class LifecycleTimelineComponent {
 
   constructor(private readonly theme: ThemeService) {
     this.timezone = this.theme.timezone();
+  }
+
+  formatDuration(durationMs?: number) {
+    if (!durationMs || durationMs <= 0) {
+      return '—';
+    }
+    const minutes = Math.floor(durationMs / 60000);
+    const seconds = Math.floor((durationMs % 60000) / 1000);
+    if (minutes >= 60) {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours}h ${mins}m`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
   }
 }

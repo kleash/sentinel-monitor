@@ -43,4 +43,17 @@ public interface StageAggregateRepository extends JpaRepository<StageAggregate, 
     List<StageAggregate> findByWorkflowVersionIdAndGroupDimHashOrderByBucketStartDesc(Long workflowVersionId, String groupDimHash, Pageable pageable);
 
     List<StageAggregate> findAllByOrderByBucketStartDesc(Pageable pageable);
+
+    List<StageAggregate> findByWorkflowVersionIdAndBucketStartBetweenOrderByBucketStartDesc(Long workflowVersionId,
+                                                                                            Instant start,
+                                                                                            Instant end,
+                                                                                            Pageable pageable);
+
+    List<StageAggregate> findByWorkflowVersionIdAndGroupDimHashAndBucketStartBetweenOrderByBucketStartDesc(Long workflowVersionId,
+                                                                                                            String groupDimHash,
+                                                                                                            Instant start,
+                                                                                                            Instant end,
+                                                                                                            Pageable pageable);
+
+    List<StageAggregate> findAllByBucketStartBetweenOrderByBucketStartDesc(Instant start, Instant end, Pageable pageable);
 }

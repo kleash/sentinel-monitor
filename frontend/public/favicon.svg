@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sentinel">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="#0b1224"/>
+  <rect x="4" y="4" width="56" height="56" rx="10" fill="url(#bg)" opacity="0.9"/>
+  <path d="M32 12 18 18v12c0 10.5 6.1 20.2 14 22 7.9-1.8 14-11.5 14-22V18L32 12z" fill="#0b1224" opacity="0.9"/>
+  <path d="M24 24h16v4H24zm0 10h12v4H24zm0 10h8v4h-8z" fill="#c7f9ff"/>
+</svg>
