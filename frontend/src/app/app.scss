@@ -10,6 +10,11 @@
   z-index: 1;
 }
 
+.wallboard-mode .app-shell {
+  max-width: none;
+  padding: 1.25rem 2rem 2.4rem;
+}
+
 .background {
   position: fixed;
   inset: 0;

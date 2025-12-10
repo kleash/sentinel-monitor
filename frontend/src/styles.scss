@@ -20,6 +20,10 @@ body {
   min-height: 100vh;
 }
 
+body.wallboard-mode {
+  font-size: 1.05rem;
+}
+
 a {
   color: var(--link-strong);
 }

@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed } from '@angular/c
 import { DatePipe, NgFor, NgIf, SlicePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { LiveUpdateService } from '../../core/services/live-update.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { StatusPillComponent } from '../../shared/components/status-pill/status-pill.component';
 import { CountdownBadgeComponent } from '../../shared/components/countdown-badge/countdown-badge.component';
 import { WallboardWorkflowTile } from '../../core/models';
@@ -15,7 +16,7 @@ import { WallboardWorkflowTile } from '../../core/models';
       <header>
         <div>
           <div class="label">Updated</div>
-          <div class="value">{{ board.updatedAt | date: 'mediumTime' }}</div>
+          <div class="value">{{ board.updatedAt | date: 'mediumTime': timezone() }}</div>
         </div>
         <button type="button" (click)="refresh()">Refresh</button>
       </header>
@@ -82,6 +83,9 @@ import { WallboardWorkflowTile } from '../../core/models';
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1rem;
       }
+      :host-context(.wallboard-mode) .grid {
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      }
       .workflow-card {
         border: 1px solid var(--border-strong);
         border-radius: 1rem;
@@ -89,6 +93,14 @@ import { WallboardWorkflowTile } from '../../core/models';
         background: linear-gradient(160deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.25));
         box-shadow: 0 12px 20px rgba(0, 0, 0, 0.25);
         cursor: pointer;
+      }
+      :host-context(.wallboard-mode) .workflow-card {
+        transform: scale(1.01);
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+      :host-context(.wallboard-mode) .workflow-card:hover {
+        transform: scale(1.015);
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.32);
       }
       .workflow-card.alert {
         border-color: var(--red-strong);
@@ -157,8 +169,15 @@ import { WallboardWorkflowTile } from '../../core/models';
 })
 export class WallboardPageComponent implements OnInit {
   protected wallboard = computed(() => this.live.wallboard()() ?? { workflows: [], updatedAt: '' });
+  protected readonly timezone: ReturnType<ThemeService['timezone']>;
 
-  constructor(private readonly live: LiveUpdateService, private readonly router: Router) {}
+  constructor(
+    private readonly live: LiveUpdateService,
+    private readonly router: Router,
+    private readonly theme: ThemeService
+  ) {
+    this.timezone = this.theme.timezone();
+  }
 
   ngOnInit(): void {
     this.live.start();

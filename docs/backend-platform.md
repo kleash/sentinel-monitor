@@ -20,7 +20,7 @@
 | `com.sentinel.platform.ingestion` | Accept raw events (Kafka or REST), validate/normalize, persist for idempotency, publish normalized or DLQ events | `/ingest`, `RawEventListener` (`events.raw`), Kafka publisher for `events.normalized`/`events.dlq` | Spring Kafka (`KafkaTemplate`/`@KafkaListener`), JPA for `event_raw`, Micrometer, `ingestion` properties |
 | `com.sentinel.platform.ruleconfig` | Workflow definition storage and activation | `/workflows` list/get/create; graph persistence into workflow tables | Spring Data JPA, `ObjectMapper` |
 | `com.sentinel.platform.ruleengine` | Rule evaluation, runtime state, expectation management, scheduler, read-model timeline | Kafka listeners on normalized/synthetic topics; expectation polling; `/items/{correlationKey}`; in-process fan-out to aggregation/alerting | `KafkaListener`, `JdbcTemplate` (runtime), JPA (config), `Clock`, `RuleEngineProperties` |
-| `com.sentinel.platform.aggregation` | Maintain per-stage aggregates for dashboards | In-process consumer of rule-evaluated; `/workflows/{id}/aggregates`, `/wallboard` | JPA `StageAggregateRepository`, `ObjectMapper` |
+| `com.sentinel.platform.aggregation` | Maintain per-stage aggregates for dashboards | In-process consumer of rule-evaluated; `/workflows/{id}/aggregates`, `/wallboard` wallboard view | JPA `StageAggregateRepository`, `ObjectMapper`, `JdbcTemplate` |
 | `com.sentinel.platform.alerting` | Alert upsert from rule outcomes and lifecycle actions with audit | In-process consumer of alerts-triggered; `/alerts` list + ack/suppress/resolve | JPA repositories for alert + audit, `ObjectMapper`, `Clock` |
 | `com.sentinel.platform.config` | Cross-cutting config (security, time) | OAuth2 resource server, UTC clock bean | Spring Security |
 
@@ -336,7 +336,7 @@
 
 ### 8.6 Wallboard/Timeline APIs
 - `/workflows/{id}/aggregates`: returns rows from `stage_aggregate` filtered by workflow version and optional `groupHash`.
-- `/wallboard`: returns recent `stage_aggregate` rows across workflows.
+- `/wallboard`: returns a wallboard view composed from recent `stage_aggregate` rows (rolls up per workflow version and group hash, attaches group labels derived from `workflow_run.group_dims`).
 - `/items/{correlationKey}`: returns latest run for the key (or specific `workflowVersionId`), including events, remaining expectations, and alerts.
 
 ## 9. Aggregation Deep Dive
@@ -356,8 +356,8 @@
 
 ### 9.3 Exposure to Frontend
 - `/workflows/{id}/aggregates`: direct select on `stage_aggregate` with optional `groupHash` filter and `limit`.
-- `/wallboard`: latest rows ordered by `bucket_start desc limit ?`.
-- Frontend wallboard tiles map `in_flight`, `completed`, `late`, `failed` per node; countdowns in UI derive from expectations (not provided by this API).
+- `/wallboard`: materialized wallboard view built from the latest bucket per workflow/group hash; emits `workflows[*].groups[*]` with `label`, `status`, `inFlight`, `late`, `failed`.
+- Frontend wallboard tiles map the rolled-up metrics; countdowns in UI derive from expectations (not provided by this API).
 
 ### 9.4 Kafka Message Schema (Aggregation)
 - Consumed: `rule.evaluated` (see 8.5).

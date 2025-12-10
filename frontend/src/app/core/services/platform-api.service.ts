@@ -12,7 +12,7 @@ import {
 } from '../models';
 import { environment } from '../../../environments/environment';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { map, tap } from 'rxjs/operators';
 
 @Injectable({ providedIn: 'root' })
 export class PlatformApiService {
@@ -66,25 +66,37 @@ export class PlatformApiService {
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.http
       .get<Alert[]>(`${this.baseUrl}/alerts${query}`)
-      .pipe(tap((rows) => console.debug('[api] alerts', rows.length)));
+      .pipe(
+        map((rows) => rows.map((alert) => this.normalizeAlert(alert))),
+        tap((rows) => console.debug('[api] alerts', rows.length))
+      );
   }
 
   ackAlert(id: string, payload?: AckRequest) {
     return this.http
       .post<Alert>(`${this.baseUrl}/alerts/${id}/ack`, payload ?? {})
-      .pipe(tap((alert) => console.debug('[api] ack', id, alert.state)));
+      .pipe(
+        map((alert) => this.normalizeAlert(alert)),
+        tap((alert) => console.debug('[api] ack', id, alert.state))
+      );
   }
 
   suppressAlert(id: string, payload?: AckRequest) {
     return this.http
       .post<Alert>(`${this.baseUrl}/alerts/${id}/suppress`, payload ?? {})
-      .pipe(tap((alert) => console.debug('[api] suppress', id, alert.state)));
+      .pipe(
+        map((alert) => this.normalizeAlert(alert)),
+        tap((alert) => console.debug('[api] suppress', id, alert.state))
+      );
   }
 
   resolveAlert(id: string, payload?: AckRequest) {
     return this.http
       .post<Alert>(`${this.baseUrl}/alerts/${id}/resolve`, payload ?? {})
-      .pipe(tap((alert) => console.debug('[api] resolve', id, alert.state)));
+      .pipe(
+        map((alert) => this.normalizeAlert(alert)),
+        tap((alert) => console.debug('[api] resolve', id, alert.state))
+      );
   }
 
   createWorkflow(payload: CreateWorkflowRequest) {
@@ -97,5 +109,24 @@ export class PlatformApiService {
     return this.http
       .post(`${this.baseUrl}/ingest`, payload)
       .pipe(tap((event) => console.debug('[api] ingest', event)));
+  }
+
+  private normalizeAlert(alert: any): Alert {
+    const correlationKey = alert.correlationKey ?? alert.correlation_key;
+    const nodeKey = alert.nodeKey ?? alert.node_key;
+    return {
+      ...alert,
+      correlationKey,
+      nodeKey,
+      workflowVersionId: alert.workflowVersionId ?? alert.workflow_version_id,
+      dedupeKey: alert.dedupeKey ?? alert.dedupe_key,
+      triggeredAt: alert.triggeredAt ?? alert.first_triggered_at ?? alert.triggered_at,
+      lastTriggeredAt: alert.lastTriggeredAt ?? alert.last_triggered_at,
+      ackedAt: alert.ackedAt ?? alert.acked_at,
+      ackedBy: alert.ackedBy ?? alert.acked_by,
+      suppressedUntil: alert.suppressedUntil ?? alert.suppressed_until,
+      title: alert.title ?? nodeKey ?? 'Alert',
+      reason: alert.reason ?? alert.state ?? ''
+    };
   }
 }

@@ -12,6 +12,7 @@ All APIs secured via OIDC JWT with roles `viewer`, `operator`, `config-admin`. B
 - `GET /workflows` (roles: `viewer`/`config-admin`)
 - `GET /workflows/{key}` (roles: `viewer`/`config-admin`)
 - `POST /workflows` (role: `config-admin`)
+  - Responses include the active version label plus the stored graph (nodes/edges/groupDimensions) for rendering workflow tiles and graphs.
   - Body example:
   ```json
   {
@@ -39,7 +40,8 @@ All APIs secured via OIDC JWT with roles `viewer`, `operator`, `config-admin`. B
 - `GET /workflows/{id}/aggregates?groupHash=&limit=50` (roles: `viewer`/`operator`/`config-admin`)
   - Rows from `stage_aggregate` with in-flight/completed/late/failed per bucket. Use `groupHash` to scope to a group.
 - `GET /wallboard?limit=200` (roles: `viewer`/`operator`/`config-admin`)
-  - Latest aggregates across workflows for dashboards.
+  - Wallboard view composed from the latest aggregates: `{"updatedAt": ISO, "workflows":[{"workflowId","workflowKey","name","status","groups":[{"label","groupHash","status","inFlight","late","failed","countdowns":[]}]}]}`.
+  - Group labels are derived from stored workflow run group dimensions (hash → key/value label), and statuses roll up worst-late/failed per group.
 
 ## Alerts
 - `GET /alerts?state=open&limit=100` (roles: `viewer`/`operator`/`config-admin`)

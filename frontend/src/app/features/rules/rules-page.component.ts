@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { CommonModule, NgFor, NgIf } from '@angular/common';
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PlatformApiService } from '../../core/services/platform-api.service';
@@ -46,7 +46,7 @@ import { GraphCanvasComponent } from '../../shared/components/graph-canvas/graph
             <input formControlName="groupDimensions" placeholder="book,region" />
           </label>
 
-          <div class="section">
+          <div class="section" formArrayName="nodes">
             <div class="section-title">Nodes</div>
             <div class="group-row" *ngFor="let node of nodes.controls; let i = index" [formGroupName]="i">
               <input formControlName="key" placeholder="ingest" />
@@ -58,7 +58,7 @@ import { GraphCanvasComponent } from '../../shared/components/graph-canvas/graph
             <button type="button" (click)="addNode()">Add Node</button>
           </div>
 
-          <div class="section">
+          <div class="section" formArrayName="edges">
             <div class="section-title">Edges</div>
             <div class="group-row" *ngFor="let edge of edges.controls; let i = index" [formGroupName]="i">
               <input formControlName="from" placeholder="ingest" />
@@ -169,7 +169,11 @@ export class RulesPageComponent implements OnInit {
   workflows: WorkflowSummary[] = [];
   form: FormGroup;
 
-  constructor(private readonly api: PlatformApiService, private readonly fb: FormBuilder) {
+  constructor(
+    private readonly api: PlatformApiService,
+    private readonly fb: FormBuilder,
+    private readonly cdr: ChangeDetectorRef
+  ) {
     this.form = this.fb.group({
       name: this.fb.control('', { validators: [Validators.required] }),
       key: this.fb.control('', { validators: [Validators.required] }),
@@ -223,7 +227,10 @@ export class RulesPageComponent implements OnInit {
   }
 
   load() {
-    this.api.getWorkflows().subscribe((workflows) => (this.workflows = workflows));
+    this.api.getWorkflows().subscribe((workflows) => {
+      this.workflows = workflows;
+      this.cdr.markForCheck();
+    });
   }
 
   addNode() {

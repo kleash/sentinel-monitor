@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.sentinel.platform.ruleconfig.model.Workflow;
 import com.sentinel.platform.ruleconfig.service.WorkflowService;
 import com.sentinel.platform.ruleconfig.web.dto.WorkflowRequest;
+import com.sentinel.platform.ruleconfig.web.dto.WorkflowView;
 
 @RestController
 @RequestMapping("/workflows")
@@ -28,22 +28,22 @@ public class WorkflowController {
 
     @GetMapping
     @PreAuthorize("hasRole('viewer') or hasRole('config-admin')")
-    public List<Workflow> list() {
-        return workflowService.list();
+    public List<WorkflowView> list() {
+        return workflowService.listViews();
     }
 
     @GetMapping("/{key}")
     @PreAuthorize("hasRole('viewer') or hasRole('config-admin')")
-    public ResponseEntity<Workflow> get(@PathVariable String key) {
-        return workflowService.findByKey(key)
+    public ResponseEntity<WorkflowView> get(@PathVariable String key) {
+        return workflowService.findViewByKey(key)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     @PreAuthorize("hasRole('config-admin')")
-    public ResponseEntity<Workflow> create(@Valid @RequestBody WorkflowRequest request) {
-        Workflow created = workflowService.createWorkflow(request);
-        return ResponseEntity.ok(created);
+    public ResponseEntity<WorkflowView> create(@Valid @RequestBody WorkflowRequest request) {
+        var created = workflowService.createWorkflow(request);
+        return ResponseEntity.ok(workflowService.toView(created));
     }
 }

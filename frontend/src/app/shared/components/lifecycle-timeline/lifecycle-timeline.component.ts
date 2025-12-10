@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { DatePipe, NgFor, NgIf } from '@angular/common';
 import { ItemTimeline } from '../../../core/models';
+import { ThemeService } from '../../../core/services/theme.service';
 import { StatusPillComponent } from '../status-pill/status-pill.component';
 import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.component';
 
@@ -21,10 +22,10 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
         <li *ngFor="let event of timeline.events">
           <div class="event-head">
             <span class="node">{{ event.node }}</span>
-            <span class="time">{{ event.eventTime | date: 'medium' }}</span>
+            <span class="time">{{ event.eventTime | date: 'medium': timezone() }}</span>
           </div>
           <div class="event-meta">
-            <span>received {{ event.receivedAt | date: 'mediumTime' }}</span>
+            <span>received {{ event.receivedAt | date: 'mediumTime': timezone() }}</span>
             <span *ngIf="event.late" class="late">Late</span>
             <span *ngIf="event.orderViolation" class="late">Order violation</span>
           </div>
@@ -125,4 +126,10 @@ import { CountdownBadgeComponent } from '../countdown-badge/countdown-badge.comp
 })
 export class LifecycleTimelineComponent {
   @Input() timeline?: ItemTimeline;
+
+  protected readonly timezone: ReturnType<ThemeService['timezone']>;
+
+  constructor(private readonly theme: ThemeService) {
+    this.timezone = this.theme.timezone();
+  }
 }

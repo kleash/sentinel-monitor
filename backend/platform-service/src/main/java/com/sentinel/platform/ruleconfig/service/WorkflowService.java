@@ -1,22 +1,24 @@
 package com.sentinel.platform.ruleconfig.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Map;
 import com.sentinel.platform.ruleconfig.model.Workflow;
-import com.sentinel.platform.ruleconfig.model.WorkflowVersion;
 import com.sentinel.platform.ruleconfig.model.WorkflowEdge;
 import com.sentinel.platform.ruleconfig.model.WorkflowNode;
+import com.sentinel.platform.ruleconfig.model.WorkflowVersion;
 import com.sentinel.platform.ruleconfig.repository.WorkflowEdgeRepository;
 import com.sentinel.platform.ruleconfig.repository.WorkflowNodeRepository;
 import com.sentinel.platform.ruleconfig.repository.WorkflowRepository;
 import com.sentinel.platform.ruleconfig.repository.WorkflowVersionRepository;
 import com.sentinel.platform.ruleconfig.web.dto.WorkflowRequest;
+import com.sentinel.platform.ruleconfig.web.dto.WorkflowView;
 
 @Service
 public class WorkflowService {
@@ -43,8 +45,19 @@ public class WorkflowService {
         return workflowRepository.findAll();
     }
 
+    public List<WorkflowView> listViews() {
+        return workflowRepository.findAll()
+                .stream()
+                .map(this::toView)
+                .toList();
+    }
+
     public Optional<Workflow> findByKey(String key) {
         return workflowRepository.findByKey(key);
+    }
+
+    public Optional<WorkflowView> findViewByKey(String key) {
+        return workflowRepository.findByKey(key).map(this::toView);
     }
 
     @Transactional
@@ -69,6 +82,30 @@ public class WorkflowService {
         saved.setActiveVersionId(version.getId());
         workflowRepository.save(saved);
         return saved;
+    }
+
+    public WorkflowView toView(Workflow workflow) {
+        Map<String, Object> graph = Map.of();
+        List<String> groupDimensions = List.of();
+        String activeVersionLabel = null;
+        if (workflow.getActiveVersionId() != null) {
+            Optional<WorkflowVersion> activeVersion = workflowVersionRepository.findById(workflow.getActiveVersionId());
+            if (activeVersion.isPresent()) {
+                WorkflowVersion version = activeVersion.get();
+                graph = parseGraph(version);
+                groupDimensions = extractGroupDimensions(graph);
+                activeVersionLabel = version.getVersionNum() != null ? "v" + version.getVersionNum() : String.valueOf(version.getId());
+            }
+        }
+        return new WorkflowView(
+                String.valueOf(workflow.getId()),
+                workflow.getKey(),
+                workflow.getName(),
+                "green",
+                activeVersionLabel,
+                graph,
+                groupDimensions
+        );
     }
 
     private void persistGraph(WorkflowVersion version, Map<String, Object> graph) {
@@ -117,5 +154,26 @@ public class WorkflowService {
         } catch (Exception e) {
             throw new IllegalArgumentException("invalid graph payload", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseGraph(WorkflowVersion version) {
+        if (version == null || version.getDefinitionJson() == null) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(version.getDefinitionJson(), new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ex) {
+            return Map.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractGroupDimensions(Map<String, Object> graph) {
+        Object dims = graph.get("groupDimensions");
+        if (dims instanceof List<?> list) {
+            return list.stream().map(Object::toString).toList();
+        }
+        return List.of();
     }
 }

@@ -186,10 +186,12 @@ export class WorkflowPageComponent implements OnInit, OnDestroy {
     this.api.getWorkflow(key).subscribe((wf) => {
       this.workflow = wf;
       this.loadAggregates(wf.id, this.activeGroupSignal());
-      const currentAlerts = this.live.alerts()();
-      this.alerts = currentAlerts.filter(
-        (a) => a.correlationKey === key || a.title.toLowerCase().includes(wf.name.toLowerCase())
-      );
+      const currentAlerts = this.live.alerts()() ?? [];
+      const nameMatch = wf.name?.toLowerCase() ?? '';
+      this.alerts = currentAlerts.filter((a) => {
+        const title = (a.title ?? '').toLowerCase();
+        return a.correlationKey === key || (!!nameMatch && title.includes(nameMatch));
+      });
       this.cdr.markForCheck();
     });
   }

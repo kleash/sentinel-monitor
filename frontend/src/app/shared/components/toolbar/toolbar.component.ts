@@ -20,8 +20,22 @@ import { StatusPillComponent } from '../status-pill/status-pill.component';
         <a routerLink="/ingest" routerLinkActive="active">Ingest</a>
       </nav>
       <div class="toggles">
-        <button type="button" (click)="theme.toggleWallboard()">Wallboard Mode</button>
-        <button type="button" (click)="theme.toggleUtc()">UTC</button>
+        <button
+          type="button"
+          (click)="theme.toggleWallboard()"
+          [class.active]="wallboardMode()"
+          [attr.aria-pressed]="wallboardMode()"
+        >
+          Wallboard Mode
+        </button>
+        <button
+          type="button"
+          (click)="theme.toggleUtc()"
+          [class.active]="utcMode()"
+          [attr.aria-pressed]="utcMode()"
+        >
+          UTC {{ utcMode() ? 'On' : 'Off' }}
+        </button>
       </div>
     </header>
   `,
@@ -77,12 +91,21 @@ import { StatusPillComponent } from '../status-pill/status-pill.component';
       button:hover {
         border-color: var(--amber-strong);
       }
+      button.active {
+        border-color: var(--amber-strong);
+        box-shadow: 0 0 12px rgba(255, 193, 7, 0.2);
+      }
     `
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ToolbarComponent {
   @Input() updatedAtLabel = '';
+  protected readonly utcMode: ReturnType<ThemeService['utcMode']>;
+  protected readonly wallboardMode: ReturnType<ThemeService['wallboardMode']>;
 
-  constructor(public readonly theme: ThemeService) {}
+  constructor(public readonly theme: ThemeService) {
+    this.utcMode = this.theme.utcMode();
+    this.wallboardMode = this.theme.wallboardMode();
+  }
 }
