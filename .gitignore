@@ -12,3 +12,4 @@
 /tests/regression/test-results/
 /logs/
 /scripts/.pids/
+./backend/platform-service/.idea/
